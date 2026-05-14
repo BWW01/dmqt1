@@ -1,0 +1,29 @@
+/* assets/css/main.css */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    @apply bg-black text-zinc-300 font-['JetBrains_Mono',_monospace];
+}
+
+.btn-industrial {
+    @apply bg-red-700 hover:bg-red-600 text-white font-black uppercase italic tracking-tighter
+    border-b-4 border-red-900 active:border-b-0 active:translate-y-1 transition-all px-6 py-2;
+}
+
+/* Opcionális: A görgetősáv stílusát is érdemes ide tenni a fájlok tisztítása végett */
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: #000;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #27272a;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #ef4444;
+}
