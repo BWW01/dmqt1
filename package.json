@@ -1,0 +1,28 @@
+{
+  "name": "dm-qt",
+  "private": true,
+  "dependencies": {
+    "@nuxtjs/tailwindcss": "^6.14.0",
+    "drizzle-orm": "^0.45.2",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-vue-next": "^1.0.0",
+    "nuxt": "^3.11.0",
+    "postgres": "^3.4.9",
+    "vue": "latest",
+    "vue-router": "latest"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/jsonwebtoken": "^9.0.10",
+    "drizzle-kit": "^0.31.10"
+  },
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "db:push": "drizzle-kit push --config=drizzle.config.ts",
+    "start:prod": "bun run db:push && node .output/server/index.mjs"
+  }
+}
