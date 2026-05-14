@@ -60,7 +60,13 @@ export async function chatCompletionStream(
             Authorization: `Bearer ${getApiKey()}`,
             "Content-Type": "application/json",
         },
-        body: JSON.stringify({ model, messages, ...params, stream: true }),
+        body: JSON.stringify({
+            model,
+            messages,
+            ...params,
+            stream: true,
+            stream_options: { include_usage: true }
+        }),
     });
 
     if (!res.ok) {
