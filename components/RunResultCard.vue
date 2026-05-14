@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-// Assuming MarkdownContent is available
-// import MarkdownContent from './MarkdownContent.vue';
 
 const props = defineProps<{
   runModel: {
@@ -18,76 +16,111 @@ const props = defineProps<{
 const statusStyles = computed(() => {
   switch (props.runModel.status) {
     case "succeeded":
-      return "text-emerald-500 border-emerald-900 bg-emerald-950/20";
+      return "text-green-700 border-green-400 bg-green-50";
     case "failed":
-      return "text-red-500 border-red-900 bg-red-950/20";
+      return "text-red-700 border-red-400 bg-red-50";
     case "running":
-      return "text-amber-500 border-amber-900 bg-amber-950/20 animate-pulse";
+      return "text-amber-700 border-amber-400 bg-amber-50";
     case "queued":
-      return "text-zinc-500 border-zinc-800 bg-zinc-950";
+      return "text-stone-600 border-stone-300 bg-stone-100";
     default:
-      return "text-zinc-500 border-zinc-800 bg-zinc-950";
+      return "text-stone-600 border-stone-300 bg-stone-100";
   }
-});
-
-const statusText = computed(() => {
-  if (props.runModel.status === 'succeeded') return 'COMPLETED';
-  if (props.runModel.status === 'running') return 'PROCESSING';
-  if (props.runModel.status === 'failed') return 'ERROR';
-  return props.runModel.status.toUpperCase();
 });
 </script>
 
 <template>
-  <div class="border-2 border-zinc-900 bg-black flex flex-col h-full overflow-hidden font-mono">
-
-    <div class="px-4 py-2 border-b-2 flex items-center justify-between" :class="statusStyles.split(' ')[1] + ' ' + statusStyles.split(' ')[2]">
-      <h4 class="font-bold text-xs uppercase tracking-widest text-zinc-300 truncate mr-4" :title="runModel.modelName">
-        {{ runModel.modelName.split("/").pop() }}
-      </h4>
-      <div class="flex items-center gap-2">
-        <span v-if="runModel.latencyMs" class="text-[10px] text-zinc-500 font-bold">
+  <div
+      class="border-2 border-stone-300 bg-stone-50 flex flex-col h-full overflow-hidden font-mono shadow-md relative"
+  >
+    <div
+        class="px-3 py-2 border-b-2 flex items-center justify-between"
+        :class="statusStyles"
+    >
+      <div class="flex items-center gap-2 overflow-hidden">
+        <div
+            v-if="runModel.status === 'running'"
+            class="w-1.5 h-1.5 bg-amber-500 animate-ping shrink-0"
+        ></div>
+        <h4
+            class="font-black text-[10px] uppercase tracking-tighter truncate text-stone-800"
+        >
+          ID: {{ runModel.modelName.split("/").pop() }}
+        </h4>
+      </div>
+      <div class="flex items-center gap-3 shrink-0 ml-2">
+        <span
+            v-if="runModel.latencyMs"
+            class="text-[9px] text-stone-500 font-bold tabular-nums"
+        >
           {{ (runModel.latencyMs / 1000).toFixed(2) }}s
         </span>
-        <span class="text-[10px] px-2 py-0.5 border font-black tracking-widest" :class="statusStyles">
-          {{ statusText }}
+        <span
+            class="text-[9px] px-1.5 py-0.5 border font-black tracking-[0.1em]"
+        >
+          {{
+            runModel.status === "succeeded"
+                ? "READY"
+                : runModel.status.toUpperCase()
+          }}
         </span>
       </div>
     </div>
 
-    <div class="p-4 flex-1 bg-zinc-950 overflow-y-auto custom-scrollbar">
-
-      <div v-if="runModel.status === 'running' || runModel.status === 'queued'" class="flex items-center justify-center h-full text-zinc-600 gap-3">
-        <div class="w-2 h-4 bg-amber-600 animate-bounce"></div>
-        <span class="text-xs font-bold uppercase tracking-widest">Awaiting output...</span>
-      </div>
-
-      <div v-else-if="runModel.status === 'failed'" class="text-red-500 text-sm">
-        <div class="font-black uppercase border-b border-red-900/50 pb-2 mb-2">
-          > ERR_CODE: {{ runModel.errorCode || "UNKNOWN_FAILURE" }}
+    <div
+        class="p-4 flex-1 bg-white overflow-y-auto custom-scrollbar relative"
+    >
+      <div
+          v-if="
+          runModel.status === 'running' || runModel.status === 'queued'
+        "
+          class="flex flex-col items-center justify-center h-full text-stone-400 animate-pulse"
+      >
+        <div class="text-[10px] font-black uppercase tracking-[0.3em]">
+          Downloading_Response
         </div>
-        <div class="text-xs text-red-400 opacity-80 whitespace-pre-wrap">{{ runModel.errorMessage }}</div>
+        <div class="w-24 h-0.5 bg-stone-200 mt-2 relative">
+          <div
+              class="absolute inset-y-0 left-0 bg-green-600 w-1/2 animate-[progress_2s_infinite]"
+          ></div>
+        </div>
       </div>
 
-      <div v-else-if="runModel.outputs?.[0]" class="text-zinc-300 text-sm leading-relaxed">
+      <div v-else-if="runModel.status === 'failed'" class="relative z-10">
+        <div
+            class="text-red-600 font-black text-xs uppercase mb-4 border-b border-red-300 pb-1"
+        >
+          > CRITICAL_FAILURE_DETECTED
+        </div>
+        <div class="bg-red-50 p-3 border border-red-200">
+          <div class="text-[10px] text-red-500 font-bold mb-1 opacity-70">
+            CODE: {{ runModel.errorCode || "UNSPECIFIED" }}
+          </div>
+          <div class="text-xs text-stone-600 italic leading-relaxed">
+            {{ runModel.errorMessage }}
+          </div>
+        </div>
+      </div>
+
+      <div
+          v-else-if="runModel.outputs?.[0]"
+          class="text-stone-700 relative z-10"
+      >
         <MarkdownContent :content="runModel.outputs[0].outputText" />
       </div>
-
     </div>
   </div>
 </template>
 
 <style scoped>
-.custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #000;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #27272a;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #dc2626;
+@keyframes progress {
+  0% {
+    left: -20%;
+    width: 20%;
+  }
+  100% {
+    left: 100%;
+    width: 20%;
+  }
 }
 </style>

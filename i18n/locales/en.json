@@ -1,0 +1,56 @@
+{
+  "common": {
+    "system_error": "SYSTEM_ERROR",
+    "err_prefix": "> ERR:"
+  },
+  "login": {
+    "gateway": "Sbusbaszudbadsul",
+    "register_title": "Operator_Registration",
+    "login_title": "System_Login",
+    "subtitle": "Please authenticate to continue",
+    "email_label": "Operator_ID (Email)",
+    "password_label": "Access_Code (Password)",
+    "btn_register": "REGISTER_OPERATOR",
+    "btn_login": "AUTHORIZE_ACCESS",
+    "btn_authenticating": "AUTHENTICATING...",
+    "switch_auth": "[ Switch to Authorization ]",
+    "switch_operator": "[ Request Operator Status ]"
+  },
+  "directory": {
+    "title": "// Project_Directory",
+    "subtitle": "Select or initialize a neural workspace",
+    "input_placeholder": "ENTER_NEW_WORKSPACE_ID...",
+    "btn_init": "INIT_WORKSPACE",
+    "btn_initializing": "INITIALIZING...",
+    "no_workspaces": "[ NO_ACTIVE_WORKSPACES_FOUND ]",
+    "sequences": "Sequences:",
+    "executions": "Executions:",
+    "created": "CREATED: {date}"
+  },
+  "workspace": {
+    "title": "// Workspace: {name}",
+    "subtitle": "Neural Interface v2.4 // {slug}",
+    "exit": "[ EXIT_TO_DIRECTORY ]",
+    "sequences_title": "Sequences",
+    "null_sequence": "NULL_SEQUENCE",
+    "new_seq_placeholder": "NEW_SEQ_NAME...",
+    "btn_init_seq": "INIT_NEW_SEQUENCE",
+    "target_model": "Neural_Model_Target",
+    "system_prompt": "System_Override_Prompt",
+    "system_prompt_placeholder": "OPTIONAL_SYSTEM_INSTRUCTION...",
+    "temp": "Temp",
+    "top_p": "Top_P",
+    "tokens": "Tokens",
+    "input_buffer": "QUERY_INPUT_BUFFER",
+    "input_placeholder": "ENTER_NEURAL_QUERY_OR_INSTRUCTION...",
+    "btn_uploading": "UPLOADING...",
+    "btn_attach": "[ ATTACH_IMAGE ]",
+    "btn_execute": "EXECUTE_RUN",
+    "btn_running": "RUNNING_INFERENCE...",
+    "latest_results": "Latest_Execution_Results",
+    "history_dump": "// Session_History_Dump",
+    "operator_input": "> OPERATOR_INPUT",
+    "neural_output": "> NEURAL_OUTPUT",
+    "syncing": "Synchronizing_Neural_Workspace..."
+  }
+}

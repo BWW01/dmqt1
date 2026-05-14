@@ -1,9 +1,18 @@
 // nuxt.config.ts
 export default defineNuxtConfig({
     compatibilityDate: "2025-01-01",
-    modules: ["@nuxtjs/tailwindcss"],
-
+    modules: ["@nuxtjs/tailwindcss", "@nuxtjs/i18n"],
     css: ['~/assets/css/main.css'],
+
+    vite: {
+        server: {
+            watch: {
+                usePolling: true,
+                interval: 100,
+            },
+        },
+    },
+
     postcss: {
         plugins: {
             tailwindcss: {},
@@ -17,5 +26,14 @@ export default defineNuxtConfig({
     },
     nitro: {
         preset: "node-server",
+    },
+    i18n: {
+        locales: [
+            { code: 'en', file: 'en.json' }
+        ],
+        defaultLocale: 'en',
+        lazy: true,
+        langDir: 'locales/', // Ide tesszük a szótárakat
+        strategy: 'no_prefix' // Nem tesz /en/-t az URL-be
     },
 });

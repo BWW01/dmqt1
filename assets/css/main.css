@@ -1,29 +1,53 @@
-/* assets/css/main.css */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-    @apply bg-black text-zinc-300 font-['JetBrains_Mono',_monospace];
+@layer base {
+    body {
+        @apply bg-stone-100 text-stone-800 font-['JetBrains_Mono',_monospace] antialiased;
+    }
 }
 
-.btn-industrial {
-    @apply bg-red-700 hover:bg-red-600 text-white font-black uppercase italic tracking-tighter
-    border-b-4 border-red-900 active:border-b-0 active:translate-y-1 transition-all px-6 py-2;
+@layer components {
+    .btn-industrial {
+        @apply bg-transparent text-stone-600 border border-stone-400
+        uppercase tracking-[0.2em] text-[10px] font-bold
+        hover:border-green-600 hover:text-green-700 hover:bg-green-50
+        active:scale-95 transition-all duration-300 px-6 py-2
+        disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+        @apply bg-stone-200;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        @apply bg-stone-400 border-none;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        @apply bg-green-600;
+    }
 }
 
-/* Opcionális: A görgetősáv stílusát is érdemes ide tenni a fájlok tisztítása végett */
-.custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-    background: #000;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #27272a;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #ef4444;
+@layer utilities {
+    input[type=range] {
+        @apply accent-green-600 cursor-pointer h-1 bg-stone-300 appearance-none outline-none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 12px;
+        width: 8px;
+        @apply bg-green-600 cursor-pointer;
+        border-radius: 0;
+        margin-top: -4px;
+    }
+
+    input[type=range]::-moz-range-thumb {
+        @apply bg-green-600 border-none rounded-none h-[12px] w-[8px] cursor-pointer;
+    }
 }

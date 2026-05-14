@@ -27,56 +27,65 @@ function toggle(id: string) {
 </script>
 
 <template>
-  <div class="font-mono">
-    <div class="flex justify-between items-end mb-2">
-      <label class="text-[10px] text-zinc-500 uppercase font-black tracking-widest">
-        // Target_Models
+  <div class="font-mono bg-stone-50 border border-stone-300 p-3 shadow-md">
+    <div class="flex justify-between items-end mb-3">
+      <label
+          class="text-[10px] text-stone-500 uppercase font-black tracking-[0.2em]"
+      >
+        // ACTIVE_REGISTRY
       </label>
-      <span class="text-xs text-red-600 font-bold">[{{ selected.length }} SELECTED]</span>
+      <span class="text-[10px] text-green-700 font-black"
+      >[{{ selected.length }} ATTACHED]</span
+      >
     </div>
 
-    <input
-        v-model="search"
-        placeholder="Filter models..."
-        class="w-full bg-black border border-zinc-800 text-zinc-300 px-3 py-2 text-xs mb-3 focus:outline-none focus:border-red-600 transition-colors placeholder-zinc-700"
-    />
+    <div class="relative mb-4">
+      <input
+          v-model="search"
+          placeholder="SEARCH_ID..."
+          class="w-full bg-white border border-stone-300 text-stone-700 px-3 py-2 text-xs focus:outline-none focus:border-green-600 transition-colors placeholder-stone-400"
+      />
+      <div class="absolute right-3 top-2.5 w-1 h-3 bg-green-600/30"></div>
+    </div>
 
-    <div class="h-48 overflow-y-auto border border-zinc-900 bg-black p-1 space-y-[2px] custom-scrollbar">
+    <div
+        class="h-64 overflow-y-auto border border-stone-300 bg-stone-50 p-1 space-y-[2px] custom-scrollbar"
+    >
       <label
           v-for="m in filtered"
           :key="m.id || m.model_name"
-          class="flex items-center gap-3 text-xs cursor-pointer p-2 transition-colors border-l-2"
-          :class="selected.includes(m.id || m.model_name) ? 'bg-red-950/40 border-red-600 text-red-500' : 'border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'"
+          class="group flex items-center gap-3 text-[11px] cursor-pointer p-2 transition-all border-l-2"
+          :class="
+          selected.includes(m.id || m.model_name)
+            ? 'bg-green-50 border-green-600 text-green-700'
+            : 'border-transparent text-stone-500 hover:bg-stone-100 hover:text-stone-800'
+        "
       >
         <div
-            class="w-3 h-3 border border-zinc-600 flex items-center justify-center transition-colors"
-            :class="{ 'border-red-500 bg-red-600': selected.includes(m.id || m.model_name) }"
+            class="w-3 h-3 border border-stone-400 flex items-center justify-center transition-all group-hover:border-stone-600"
+            :class="{
+            'border-green-600 bg-green-100': selected.includes(
+              m.id || m.model_name,
+            ),
+          }"
         >
-          <div v-if="selected.includes(m.id || m.model_name)" class="w-1.5 h-1.5 bg-black"></div>
+          <div
+              v-if="selected.includes(m.id || m.model_name)"
+              class="w-1.5 h-1.5 bg-green-600"
+          ></div>
         </div>
 
-        <span class="truncate font-bold">{{ (m.id || m.model_name).split('/').pop() }}</span>
+        <span class="truncate font-bold tracking-tight uppercase">{{
+            (m.id || m.model_name).split("/").pop()
+          }}</span>
       </label>
 
-      <div v-if="filtered.length === 0" class="text-red-900 text-xs text-center py-4 uppercase font-bold tracking-widest">
-        NO_MODELS_FOUND
+      <div
+          v-if="filtered.length === 0"
+          class="text-stone-400 text-[10px] text-center py-8 uppercase font-black tracking-widest italic"
+      >
+        ERR: NO_RECORDS_LOCATED
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-/* Optional: Make the scrollbar look industrial */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #000;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #dc2626;
-}
-</style>
