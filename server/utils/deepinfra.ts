@@ -47,3 +47,26 @@ export async function chatCompletion(
         clearTimeout(timer);
     }
 }
+
+export async function chatCompletionStream(
+    model: string,
+    messages: { role: string; content: string }[],
+    params: Record<string, unknown> = {}
+) {
+    const fetch = globalThis.fetch;
+    const res = await fetch("https://api.deepinfra.com/v1/openai/chat/completions", {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${getApiKey()}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model, messages, ...params, stream: true }),
+    });
+
+    if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`DeepInfra error: ${res.status} ${body}`);
+    }
+
+    return res.body;
+}
