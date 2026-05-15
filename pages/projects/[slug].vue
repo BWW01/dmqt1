@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// 1. JAVÍTÁS: Importáljuk a ref, watch és nextTick funkciókat is
 import { computed, onMounted, watchEffect, ref, watch, nextTick } from 'vue';
 
 import { useWorkspace } from '~/composables/useWorkspace';
@@ -13,27 +12,25 @@ const projectSlug = computed(() => route.params.slug as string);
 const { isLoggedIn } = useAuth();
 watchEffect(() => { if (!isLoggedIn.value) navigateTo("/login"); });
 
-// Composables behívása
 const { project, conversations, selectedConversationId, messages, newConvTitle, loadProject, loadMessages, createConversation } = useWorkspace(projectSlug);
 const { models, selectedModels, loadModels } = useAIModels();
 const { uploadedImages, uploadLoading, handleFileUpload } = useAttachments();
 const { mqInput, systemPrompt, temperature, topP, maxTokens, includeLocation, polling, runResult, streamingRun, startRun } = useNeuralStream(projectSlug, selectedConversationId, selectedModels, messages, uploadedImages, loadMessages);
 
-// --- ÚJ GÖRGETÉSI LOGIKA KEZDŐDIK ---
 const chatContainerRef = ref<HTMLElement | null>(null);
+const leftPanelOpen = ref(true);
+const rightPanelOpen = ref(true);
 
 const scrollToBottom = async () => {
-  await nextTick(); // Megvárjuk, amíg a Vue frissíti a DOM-ot (pl. megjelenik az új szöveg)
+  await nextTick();
   if (chatContainerRef.value) {
     chatContainerRef.value.scrollTop = chatContainerRef.value.scrollHeight;
   }
 };
 
-// Figyeljük az üzeneteket és a futásokat. Ha változnak, azonnal lejjebb görgetünk.
 watch(() => messages.value, scrollToBottom, { deep: true });
 watch(() => streamingRun.value, scrollToBottom, { deep: true });
 watch(() => runResult.value, scrollToBottom, { deep: true });
-// --- ÚJ GÖRGETÉSI LOGIKA VÉGE ---
 
 onMounted(async () => {
   await Promise.all([loadProject(), loadModels()]);
@@ -63,21 +60,40 @@ const handleConversationSelect = (id: number) => {
         </NuxtLink>
       </div>
 
-      <div class="grid grid-cols-12 gap-6 lg:gap-8 flex-1 min-h-0">
+      <div class="flex gap-6 lg:gap-8 flex-1 min-h-0">
 
-        <div class="col-span-12 lg:col-span-3 flex flex-col h-full min-h-0">
-          <SequenceSidebar
-              :conversations="conversations"
-              :selectedConversationId="selectedConversationId"
-              v-model:newConvTitle="newConvTitle"
-              @select="handleConversationSelect"
-              @create="createConversation"
-          />
+        <!-- LEFT SIDEBAR -->
+        <div
+            :class="[
+            'flex flex-col h-full min-h-0 transition-all duration-300 overflow-hidden',
+            leftPanelOpen ? 'w-[250px]' : 'w-20'
+          ]"
+        >
+          <button
+              @click="leftPanelOpen = !leftPanelOpen"
+              class="flex-none mb-2 px-2 py-2 text-xs border border-stone-400 hover:bg-stone-200 transition-colors uppercase tracking-wider font-bold"
+              :title="leftPanelOpen ? 'Close sidebar' : 'Open sidebar'"
+          >
+            {{ leftPanelOpen ? '[ < ]' : '[ > ]' }}
+          </button>
+          <div v-show="leftPanelOpen" class="flex-1 min-h-0 overflow-hidden">
+            <SequenceSidebar
+                :conversations="conversations"
+                :selectedConversationId="selectedConversationId"
+                v-model:newConvTitle="newConvTitle"
+                @select="handleConversationSelect"
+                @create="createConversation"
+            />
+          </div>
         </div>
 
-        <div class="col-span-12 lg:col-span-6 flex flex-col h-full min-h-0 gap-4">
+        <!-- CENTER CONTENT -->
+        <div class="flex-1 flex flex-col h-full min-h-0 gap-4">
 
-          <div ref="chatContainerRef" class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+          <div
+              ref="chatContainerRef"
+              class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6"
+          >
             <SessionHistory
                 v-if="selectedConversationId && messages.length > 0"
                 :messages="messages"
@@ -101,16 +117,31 @@ const handleConversationSelect = (id: number) => {
           </div>
         </div>
 
-        <div class="col-span-12 lg:col-span-3 flex flex-col h-full min-h-0">
-          <NeuralParamsPanel
-              :models="models"
-              v-model:selectedModels="selectedModels"
-              v-model:systemPrompt="systemPrompt"
-              v-model:temperature="temperature"
-              v-model:topP="topP"
-              v-model:maxTokens="maxTokens"
-              v-model:includeLocation="includeLocation"
-          />
+        <!-- RIGHT SIDEBAR -->
+        <div
+            :class="[
+            'flex flex-col h-full min-h-0 transition-all duration-300 overflow-hidden',
+            rightPanelOpen ? 'w-[350px]' : 'w-20'
+          ]"
+        >
+          <button
+              @click="rightPanelOpen = !rightPanelOpen"
+              class="flex-none mb-2 px-2 py-2 text-xs border border-stone-400 hover:bg-stone-200 transition-colors uppercase tracking-wider font-bold"
+              :title="rightPanelOpen ? 'Close sidebar' : 'Open sidebar'"
+          >
+            {{ rightPanelOpen ? '[ > ]' : '[ < ]' }}
+          </button>
+          <div v-show="rightPanelOpen" class="flex-1 min-h-0 overflow-hidden">
+            <NeuralParamsPanel
+                :models="models"
+                v-model:selectedModels="selectedModels"
+                v-model:systemPrompt="systemPrompt"
+                v-model:temperature="temperature"
+                v-model:topP="topP"
+                v-model:maxTokens="maxTokens"
+                v-model:includeLocation="includeLocation"
+            />
+          </div>
         </div>
 
       </div>

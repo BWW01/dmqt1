@@ -4,7 +4,11 @@ import { eq, and, desc, count } from "drizzle-orm";
 import { projects, conversations, messages } from "~~/server/database/schema";
 
 export default defineEventHandler(async (event) => {
-    const userId = event.context.userId as number;
+    const userId = event.context.user?.id;
+
+    if (!userId) {
+        throw createError({ statusCode: 401, message: "Unauthorized" });
+    }
     const slug = getRouterParam(event, "slug");
 
     // 1. Get Project ID

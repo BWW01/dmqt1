@@ -11,6 +11,11 @@ const { logout, user } = useAuth();
 
       <div v-if="user" class="flex items-center gap-6 text-xs uppercase font-bold">
         <span class="text-stone-500">OP: {{ user.email }}</span>
+
+        <span class="text-green-600 bg-green-50 border border-green-200 px-2 py-1 rounded">
+          TOKENS: {{ user.credits.toFixed(10) }}
+        </span>
+
         <NuxtLink to="/" class="text-stone-400 hover:text-stone-900 transition-colors">
           [ Projects ]
         </NuxtLink>

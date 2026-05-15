@@ -3,61 +3,113 @@ interface User {
     id: number;
     email: string;
     role: string;
+    credits: number;
+}
+
+interface AuthResponse {
+    token: string;
+    user: User;
 }
 
 export function useAuth() {
-    const token = useCookie("dmqt_token", {
+    const token = useCookie<string | null>("dmqt_token", {
         maxAge: 60 * 60 * 24 * 7,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
     });
+
     const user = useState<User | null>("auth_user", () => null);
+    const isInitialized = useState<boolean>("auth_initialized", () => false);
 
-    const isLoggedIn = computed(() => !!token.value);
+    const isLoggedIn = computed(() => !!token.value && !!user.value);
 
-    async function login(email: string, password: string) {
-        const res = await $fetch<{ token: string; user: User }>(
-            "/api/auth/login",
-            {
-                method: "POST",
-                body: { email, password },
-            },
-        );
+    function setAuth(res: AuthResponse) {
         token.value = res.token;
         user.value = res.user;
-        return res;
     }
 
-    async function register(email: string, password: string) {
-        const res = await $fetch<{ token: string; user: User }>(
-            "/api/auth/register",
-            {
-                method: "POST",
-                body: { email, password },
-            },
-        );
-        token.value = res.token;
-        user.value = res.user;
-        return res;
-    }
-
-    async function fetchMe() {
-        if (!token.value) return null;
-        try {
-            const me = await $fetch<User>("/api/auth/me", {
-                headers: { Authorization: `Bearer ${token.value}` },
-            });
-            user.value = me;
-            return me;
-        } catch {
-            token.value = null;
-            user.value = null;
-            return null;
-        }
-    }
-
-    function logout() {
+    function clearAuth() {
         token.value = null;
         user.value = null;
     }
 
-    return { token, user, isLoggedIn, login, register, fetchMe, logout };
+    async function login(email: string, password: string) {
+        try {
+            const res = await $fetch<AuthResponse>("/api/auth/login", {
+                method: "POST",
+                body: { email, password },
+            });
+            setAuth(res);
+            return res;
+        } catch (error) {
+            clearAuth();
+            throw error;
+        }
+    }
+
+    async function register(email: string, password: string) {
+        try {
+            const res = await $fetch<AuthResponse>("/api/auth/register", {
+                method: "POST",
+                body: { email, password },
+            });
+            setAuth(res);
+            return res;
+        } catch (error) {
+            clearAuth();
+            throw error;
+        }
+    }
+
+    async function fetchMe(): Promise<User | null> {
+        if (!token.value) {
+            user.value = null;
+            isInitialized.value = true;
+            return null;
+        }
+
+        try {
+            const res = await $fetch<{ user: User }>("/api/auth/me", {
+                headers: { Authorization: `Bearer ${token.value}` },
+            });
+            user.value = res.user;
+            return res.user;
+        } catch {
+            clearAuth();
+            return null;
+        } finally {
+            isInitialized.value = true;
+        }
+    }
+
+    async function logout(redirect = true) {
+        if (token.value) {
+            try {
+                await $fetch("/api/auth/logout", {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${token.value}` },
+                });
+            } catch {
+                // ignore
+            }
+        }
+
+        clearAuth();
+
+        if (redirect) {
+            await navigateTo("/login");
+        }
+    }
+
+    return {
+        token,
+        user,
+        isLoggedIn,
+        isInitialized,
+        login,
+        register,
+        fetchMe,
+        logout,
+    };
 }

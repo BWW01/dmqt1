@@ -1,4 +1,4 @@
-// server/middleware/useAuth.ts
+// server/middleware/auth.ts (vagy server/middleware/useAuth.ts, attól függően hogy nevezted el)
 import { verifyToken } from "~/server/utils/auth"
 
 export default defineEventHandler((event) => {
@@ -20,7 +20,11 @@ export default defineEventHandler((event) => {
 
     try {
         const payload = verifyToken(header.slice(7));
-        event.context.userId = payload.sub;
+
+        // ITT A JAVÍTÁS: Olyan objektumot rakunk be, amit a me.get.ts vár
+        // (A Number() azért érdemes, mert az adatbázisban integer az ID)
+        event.context.user = { id: Number(payload.sub) };
+
     } catch {
         throw createError({
             statusCode: 401,

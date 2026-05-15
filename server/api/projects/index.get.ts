@@ -4,7 +4,7 @@ import { eq, desc, sql, count } from "drizzle-orm";
 import { projects, conversations, runs } from "~~/server/database/schema";
 
 export default defineEventHandler(async (event) => {
-    const userId = event.context.userId as number;
+    const userId = event.context.user?.id;
 
     // 1. Get all projects for the user
     const userProjects = await db

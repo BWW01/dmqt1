@@ -2,18 +2,41 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { db } from "~~/server/utils/db";
-import { eq, and, asc } from "drizzle-orm";
-import { runs, runModels, runOutputs, projects, messages } from "~~/server/database/schema";
+// FIGYELEM: Az 'sql' bekerült az importok közé!
+import { eq, and, asc, sql } from "drizzle-orm";
+// FIGYELEM: A 'users' táblát is beimportáltuk!
+import { runs, runModels, runOutputs, projects, messages, users } from "~~/server/database/schema";
 import { chatCompletionStream } from "~~/server/utils/deepinfra";
 
 export default defineEventHandler(async (event) => {
-    const userId = event.context.userId as number;
+    const userId = event.context.user?.id; // Javítva az új auth logikához
+
+    if (!userId) {
+        throw createError({ statusCode: 401, message: "Unauthorized" });
+    }
+
     const body = await readBody(event);
     const { models, userInput, params, projectSlug, conversationId, systemPrompt, includeLocation } = body;
 
     if (!models?.length || !userInput || !projectSlug) {
         throw createError({ statusCode: 400, message: "models, userInput, and projectSlug are required" });
     }
+
+    // --- 1. KREDIT ELLENŐRZÉSE A FUTÁS ELŐTT ---
+    const [user] = await db
+        .select({ credits: users.credits })
+        .from(users)
+        .where(eq(users.id, userId));
+
+    const currentCredits = Number(user?.credits || 0);
+
+    if (!user || currentCredits <= 0) {
+        throw createError({
+            statusCode: 402,
+            message: `ACCESS_DENIED: Nincs elég tokened. Jelenlegi egyenleged: ${currentCredits}`
+        });
+    }
+    // -------------------------------------------
 
     const [project] = await db.select()
         .from(projects)
@@ -29,22 +52,15 @@ export default defineEventHandler(async (event) => {
     if (includeLocation) {
         try {
             let ip = getRequestIP(event, { xForwardedFor: true });
-            console.log("> Észlelt IP:", ip);
-
-            // Ha lokális IP-t vagy Docker belső IP-t észlel, használjunk egy teszt publikus IP-t
             if (!ip || ip === '::1' || ip.includes('127.0.0.1') || ip.startsWith('172.')) {
-                console.log("> Lokális környezet, teszt IP beállítása...");
                 ip = '8.8.8.8';
             }
-
             if (ip) {
                 const locRes = await fetch(`http://ip-api.com/json/${ip}`);
                 if (locRes.ok) {
                     const data = await locRes.json();
                     if (data.status === "success") {
                         locationData = data;
-                    } else {
-                        console.warn("> IP API hiba:", data);
                     }
                 }
             }
@@ -110,7 +126,6 @@ export default defineEventHandler(async (event) => {
     setHeader(event, 'Cache-Control', 'no-cache');
     setHeader(event, 'Connection', 'keep-alive');
 
-    // Kezdeti üzenet küldése a frontendnek
     event.node.res.write(`data: ${JSON.stringify({ type: "init", runId: run.id })}\n\n`);
 
     // Párhuzamos stream-ek indítása és feldolgozása
@@ -118,7 +133,7 @@ export default defineEventHandler(async (event) => {
         insertedRunModels.map(async (rm) => {
             const t0 = Date.now();
             let fullText = "";
-            let usageData: any = null; // Költség és token adatok tárolója
+            let usageData: any = null;
 
             try {
                 const aiMessages: { role: string; content: string }[] = [];
@@ -137,7 +152,6 @@ export default defineEventHandler(async (event) => {
 
                 aiMessages.push({ role: "user", content: processedInput });
 
-                // DeepInfra hívás streaming módban
                 const stream = await chatCompletionStream(rm.modelName, aiMessages, params ?? {});
 
                 if (stream) {
@@ -155,20 +169,15 @@ export default defineEventHandler(async (event) => {
                             if (line.startsWith("data: ") && line !== "data: [DONE]") {
                                 try {
                                     const data = JSON.parse(line.slice(6));
-
-                                    // Usage adatok elkapása, ha megérkezik
                                     if (data.usage) {
                                         usageData = data.usage;
                                     }
-
                                     const delta = data.choices?.[0]?.delta?.content || "";
                                     if (delta) {
                                         fullText += delta;
                                         event.node.res.write(`data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: delta })}\n\n`);
                                     }
-                                } catch (e) {
-                                    // Hibás parse ignorálása csonka JSON esetén
-                                }
+                                } catch (e) {}
                             }
                         }
                     }
@@ -176,19 +185,33 @@ export default defineEventHandler(async (event) => {
 
                 const latency = Date.now() - t0;
 
-                // Kimenet véglegesítése az adatbázisban a költségekkel együtt
+                // --- 2. KREDIT LEVONÁSA A STREAM VÉGÉN ---
+                let cost = usageData?.estimated_cost*1.25;
+                if (typeof cost !== 'number' || cost === 0) {
+                    const totalTokens = usageData?.total_tokens || 10;
+                    cost = totalTokens * 0.000001;
+                }
+
+                if (cost > 0) {
+                    // Az 'sql' segítségével vonjuk le, hogy a párhuzamos modellek ne írják felül egymást!
+                    await db.update(users)
+                        .set({ credits: sql`${users.credits} - ${cost}` })
+                        .where(eq(users.id, userId));
+                }
+                // ------------------------------------------
+
                 await db.insert(runOutputs).values({
                     runModelId: rm.id,
                     outputText: fullText,
                     rawResponseJson: usageData || {}
                 });
+
                 await db.update(runModels).set({
                     status: "succeeded",
                     latencyMs: latency,
                     finishedAt: new Date()
                 }).where(eq(runModels.id, rm.id));
 
-                // --- AI VÁLASZ MENTÉSE A CHAT TÖRTÉNETBE ---
                 if (conversationId) {
                     await db.insert(messages).values({
                         conversationId,
@@ -203,25 +226,21 @@ export default defineEventHandler(async (event) => {
                     });
                 }
 
-                // Befejezés jelzése a kliensnek, továbbítva a usage adatokat is
                 event.node.res.write(`data: ${JSON.stringify({ type: "done", modelId: rm.id, usage: usageData })}\n\n`);
 
             } catch (err: any) {
                 const latency = Date.now() - t0;
                 await db.update(runModels).set({ status: "failed", errorMessage: err.message, latencyMs: latency, finishedAt: new Date() }).where(eq(runModels.id, rm.id));
-
                 event.node.res.write(`data: ${JSON.stringify({ type: "error", modelId: rm.id, error: err.message })}\n\n`);
             }
         })
     );
 
-    // Teljes run státusz frissítése
     const statuses = await db.select({ status: runModels.status }).from(runModels).where(eq(runModels.runId, run.id));
     const allOk = statuses.every((s) => s.status === "succeeded");
     const anyOk = statuses.some((s) => s.status === "succeeded");
 
     await db.update(runs).set({ status: allOk ? "succeeded" : anyOk ? "partial" : "failed", finishedAt: new Date() }).where(eq(runs.id, run.id));
 
-    // Stream lezárása
     event.node.res.end();
 });

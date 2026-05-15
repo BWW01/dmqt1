@@ -7,7 +7,11 @@ import { verifyPassword, signToken } from "~~/server/utils/auth";
 import { chatCompletion, listModels } from "~~/server/utils/deepinfra";
 
 export default defineEventHandler(async (event) => {
-    const userId = event.context.userId as number;
+    const userId = event.context.user?.id;
+
+    if (!userId) {
+        throw createError({ statusCode: 401, message: "Unauthorized" });
+    }
     const id = Number(getRouterParam(event, "id"));
 
     // Fetch flat relational data via SQL Joins

@@ -11,7 +11,7 @@ const includeLocation = defineModel<boolean>("includeLocation", { required: true
 
 <template>
   <div class="flex flex-col h-full overflow-y-auto custom-scrollbar pr-2 pb-2">
-    <div class="flex flex-col gap-6 bg-white border border-stone-300 p-4">
+    <div class="flex flex-col gap-6 p-4">
       <div>
         <h2 class="text-xs font-black text-stone-500 uppercase mb-4 tracking-widest border-l-2 border-green-600 pl-2">
           Execution_Params

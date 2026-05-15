@@ -9,6 +9,10 @@ const projects = ref<any[]>([]);
 const newProjectName = ref("");
 const loading = ref(false);
 
+definePageMeta({
+  middleware: ["auth"]
+});
+
 async function loadProjects() {
   try {
     const data = await $api<any[]>("/api/projects");

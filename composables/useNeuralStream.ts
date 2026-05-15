@@ -11,6 +11,9 @@ export function useNeuralStream(
 ) {
     const { $api } = useApi();
 
+    // --- AUTH COMPOSABLE BEHÍVÁSA ---
+    const { fetchMe } = useAuth();
+
     // 1. JAVÍTÁS: A cookie-t itt, a gyökérben kell lekérni!
     const token = useCookie("dmqt_token");
 
@@ -133,6 +136,10 @@ export function useNeuralStream(
 
             polling.value = false;
 
+            // --- ÚJ SOR: Frissítjük az egyenleget a fejlécben ---
+            await fetchMe();
+            // -----------------------------------------------------
+
             if (selectedConversationId.value) {
                 runResult.value = null;
                 streamingRun.value = null;
@@ -145,6 +152,10 @@ export function useNeuralStream(
         } catch (e) {
             console.error("Futás hiba:", e);
             polling.value = false;
+
+            // --- ÚJ SOR: Hiba esetén (pl. nincs kredit) is frissítjük a kijelzést ---
+            await fetchMe();
+            // ------------------------------------------------------------------------
         }
     }
 

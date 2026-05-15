@@ -17,7 +17,11 @@ const generateSlug = (name: string) => {
 };
 
 export default defineEventHandler(async (event) => {
-    const userId = event.context.userId as number;
+    const userId = event.context.user?.id;
+
+    if (!userId) {
+        throw createError({ statusCode: 401, message: "Unauthorized" });
+    }
     const { name } = await readBody(event);
 
     if (!name) {

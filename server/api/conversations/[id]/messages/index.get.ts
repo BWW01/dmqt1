@@ -7,7 +7,11 @@ import { verifyPassword, signToken } from "~~/server/utils/auth";
 import { chatCompletion, listModels } from "~~/server/utils/deepinfra";
 
 export default defineEventHandler(async (event) => {
-    const userId = event.context.userId as number;
+    const userId = event.context.user?.id;
+
+    if (!userId) {
+        throw createError({ statusCode: 401, message: "Unauthorized" });
+    }
     const conversationId = Number(getRouterParam(event, "id"));
 
     // Jogosultság ellenőrzés (Inner join to check project ownership)
