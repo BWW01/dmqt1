@@ -210,9 +210,22 @@ export default defineEventHandler(async (event) => {
 
             try {
                 const aiMessages: any[] = [];
-                if (systemPrompt) aiMessages.push({ role: "system", content: systemPrompt });
 
-                // Use pre-fetched history (Fix #2: no double-append)
+// 1. Dynamically build context for the system prompt
+                let dynamicContext = "";
+                if (includeLocation && locationData?.status === "success") {
+                    dynamicContext += `\nUser's current location: ${locationData.city}, ${locationData.country}.`;
+                }
+                dynamicContext += `\nCurrent server time: ${new Date().toISOString()}.`;
+
+// 2. Append the dynamic context to the system prompt
+                let finalSystemPrompt = systemPrompt ? systemPrompt + "\n" + dynamicContext : dynamicContext.trim();
+
+                if (finalSystemPrompt) {
+                    aiMessages.push({ role: "system", content: finalSystemPrompt });
+                }
+
+// 3. Append history
                 for (const msg of conversationHistory) {
                     aiMessages.push({
                         role: msg.sender === "user" ? "user" : "assistant",
@@ -220,6 +233,7 @@ export default defineEventHandler(async (event) => {
                     });
                 }
 
+// 4. Append current input
                 aiMessages.push({ role: "user", content: processedInput });
 
                 // Fix #3: void return, Fix #4: depth limit
