@@ -12,6 +12,7 @@ const projectSlug = computed(() => route.params.slug as string);
 const { isLoggedIn } = useAuth();
 watchEffect(() => { if (!isLoggedIn.value) navigateTo("/login"); });
 
+const { $api } = useApi(); // We need $api for the import fetch
 const { project, conversations, selectedConversationId, messages, newConvTitle, loadProject, loadMessages, createConversation } = useWorkspace(projectSlug);
 const { models, selectedModels, loadModels } = useAIModels();
 const { uploadedImages, uploadLoading, handleFileUpload } = useAttachments();
@@ -20,6 +21,39 @@ const { mqInput, systemPrompt, temperature, topP, maxTokens, includeLocation, po
 const chatContainerRef = ref<HTMLElement | null>(null);
 const leftPanelOpen = ref(true);
 const rightPanelOpen = ref(true);
+
+// --- NEW GITHUB IMPORT LOGIC ---
+const githubUrl = ref("");
+const importingGithub = ref(false);
+
+async function importToCurrentSlug() {
+  if (!githubUrl.value.trim()) return alert("ERR: Missing GitHub URL!");
+  importingGithub.value = true;
+  try {
+    await $api("/api/projects/import-github", {
+      method: "POST",
+      body: {
+        repoUrl: githubUrl.value.trim(),
+        existingProjectSlug: projectSlug.value
+      },
+    });
+    githubUrl.value = "";
+
+    // Reload the project to fetch the new conversation/sequence
+    await loadProject();
+
+    // Automatically select the newly created sequence (which will be the most recent one)
+    if (conversations.value.length > 0) {
+      selectedConversationId.value = conversations.value[conversations.value.length - 1].id;
+      await loadMessages();
+    }
+  } catch (e: any) {
+    alert("IMPORT_FAILED: " + (e.message || "Unknown error"));
+  } finally {
+    importingGithub.value = false;
+  }
+}
+// -------------------------------
 
 const scrollToBottom = async () => {
   await nextTick();
@@ -42,11 +76,12 @@ const handleConversationSelect = (id: number) => {
   loadMessages();
 };
 </script>
+
 <template>
   <div class="p-6 font-mono h-full flex flex-col bg-stone-100 text-stone-800 overflow-hidden">
     <div v-if="project" class="max-w-[1600px] w-full mx-auto flex flex-col h-full min-h-0">
 
-      <div class="flex-none flex justify-between items-center border-b-2 border-green-700 pb-4 mb-6">
+      <div class="flex-none flex justify-between items-start border-b-2 border-green-700 pb-4 mb-6">
         <div>
           <h1 class="text-3xl font-black text-green-700 uppercase tracking-tighter">
             // Workspace: {{ project.name }}
@@ -55,14 +90,32 @@ const handleConversationSelect = (id: number) => {
             Neural Interface v2.4 // {{ projectSlug }}
           </p>
         </div>
-        <NuxtLink to="/" class="text-xs border border-stone-400 px-3 py-1 hover:bg-stone-200 transition-colors">
-          [ EXIT_TO_DIRECTORY ]
-        </NuxtLink>
+
+        <div class="flex flex-col items-end gap-2">
+          <NuxtLink to="/" class="text-xs border border-stone-400 px-3 py-1 hover:bg-stone-200 transition-colors inline-block text-right">
+            [ EXIT_TO_DIRECTORY ]
+          </NuxtLink>
+
+          <div class="flex gap-1 mt-1">
+            <input
+                v-model="githubUrl"
+                placeholder="GITHUB_URL..."
+                class="text-xs px-2 py-1 border border-stone-300 w-48 focus:outline-none focus:border-green-500 placeholder-stone-400"
+                @keyup.enter="importToCurrentSlug"
+            />
+            <button
+                @click="importToCurrentSlug"
+                :disabled="importingGithub"
+                class="text-xs bg-stone-800 text-white px-3 py-1 hover:bg-black disabled:opacity-50 uppercase flex-none"
+            >
+              {{ importingGithub ? 'CLONING...' : 'PULL_REPO' }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="flex gap-6 lg:gap-8 flex-1 min-h-0">
 
-        <!-- LEFT SIDEBAR -->
         <div
             :class="[
             'flex flex-col h-full min-h-0 transition-all duration-300 overflow-hidden',
@@ -87,7 +140,6 @@ const handleConversationSelect = (id: number) => {
           </div>
         </div>
 
-        <!-- CENTER CONTENT -->
         <div class="flex-1 flex flex-col h-full min-h-0 gap-4">
 
           <div
@@ -117,7 +169,6 @@ const handleConversationSelect = (id: number) => {
           </div>
         </div>
 
-        <!-- RIGHT SIDEBAR -->
         <div
             :class="[
             'flex flex-col h-full min-h-0 transition-all duration-300 overflow-hidden',

@@ -40,9 +40,6 @@ export default defineEventHandler(async (event): Promise<Model[]> => {
         const response = await listModels();
         const modelsList = response.data || response;
 
-        // DEBUG: Nézd meg az első modell összes mezőjét
-        console.log('First raw model:', JSON.stringify(modelsList[0], null, 2));
-
         const enriched: Model[] = modelsList.map((m: any) => ({
             id: m.id || m.model_name || '',
             model_name: m.name || m.model_name || m.id || '',

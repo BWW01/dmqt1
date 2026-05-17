@@ -1,5 +1,5 @@
 {
-  "id": "cf139ee3-5591-46ca-a3f5-05a6236cebea",
+  "id": "e3c26ba5-261a-4da0-aaa6-1bb9c8390fdf",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -533,6 +533,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'user'"
+        },
+        "credits": {
+          "name": "credits",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

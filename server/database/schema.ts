@@ -19,7 +19,7 @@ export const users = pgTable("users", {
     passwordHash: text("password_hash").notNull(),
     passwordSalt: text("password_salt").notNull(),
     role: text("role").notNull().default("user"),
-    credits: doublePrecision("credits").notNull().default(5.0),
+    credits: doublePrecision("credits").notNull().default(0.0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

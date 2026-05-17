@@ -2,11 +2,26 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { db } from "~~/server/utils/db";
-// FIGYELEM: Az 'sql' bekerült az importok közé!
 import { eq, and, asc, sql } from "drizzle-orm";
-// FIGYELEM: A 'users' táblát is beimportáltuk!
 import { runs, runModels, runOutputs, projects, messages, users } from "~~/server/database/schema";
 import { chatCompletionStream } from "~~/server/utils/deepinfra";
+
+const tools = [
+    {
+        type: "function",
+        function: {
+            name: "read_file",
+            description: "Read the exact content of a source code file from the imported GitHub repository.",
+            parameters: {
+                type: "object",
+                properties: {
+                    filePath: { type: "string", description: "The relative path to the file (e.g. src/main.ts)" }
+                },
+                required: ["filePath"]
+            }
+        }
+    }
+];
 
 export default defineEventHandler(async (event) => {
     const userId = event.context.user?.id; // Javítva az új auth logikához
@@ -77,7 +92,7 @@ export default defineEventHandler(async (event) => {
     for (const match of matches) {
         const relativePath = match[1];
         const cleanPath = relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
-        const fullPath = path.join(process.cwd(), 'public', cleanPath);
+        const fullPath = path.join(process.cwd(), '.storage', 'github', project.slug, cleanPath);
 
         try {
             const fileContent = await fs.readFile(fullPath, 'utf-8');
@@ -136,7 +151,7 @@ export default defineEventHandler(async (event) => {
             let usageData: any = null;
 
             try {
-                const aiMessages: { role: string; content: string }[] = [];
+                const aiMessages: any[] = [];
                 if (systemPrompt) aiMessages.push({ role: "system", content: systemPrompt });
 
                 if (conversationId) {
@@ -152,11 +167,17 @@ export default defineEventHandler(async (event) => {
 
                 aiMessages.push({ role: "user", content: processedInput });
 
-                const stream = await chatCompletionStream(rm.modelName, aiMessages, params ?? {});
+                // --- RECURSIVE FUNCTION FOR TOOL CALLS ---
+                async function executeAIStream(messagesArray: any[]): Promise<string> {
+                    const stream = await chatCompletionStream(rm.modelName, messagesArray, { ...(params ?? {}), tools });
 
-                if (stream) {
+                    if (!stream) return "";
+
                     const reader = stream.getReader();
                     const decoder = new TextDecoder("utf-8");
+
+                    let loopText = "";
+                    let toolCalls: any[] = [];
 
                     while (true) {
                         const { done, value } = await reader.read();
@@ -172,21 +193,89 @@ export default defineEventHandler(async (event) => {
                                     if (data.usage) {
                                         usageData = data.usage;
                                     }
-                                    const delta = data.choices?.[0]?.delta?.content || "";
-                                    if (delta) {
-                                        fullText += delta;
-                                        event.node.res.write(`data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: delta })}\n\n`);
+                                    const delta = data.choices?.[0]?.delta;
+
+                                    if (!delta) continue;
+
+                                    // Accumulate Standard Text
+                                    if (delta.content) {
+                                        loopText += delta.content;
+                                        fullText += delta.content;
+                                        event.node.res.write(`data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: delta.content })}\n\n`);
+                                    }
+
+                                    // Accumulate Tool Call Chunks
+                                    if (delta.tool_calls) {
+                                        for (const tc of delta.tool_calls) {
+                                            const index = tc.index || 0;
+                                            if (!toolCalls[index]) {
+                                                toolCalls[index] = {
+                                                    id: tc.id || "",
+                                                    type: "function",
+                                                    function: { name: tc.function?.name || "", arguments: "" }
+                                                };
+                                            }
+                                            if (tc.id) toolCalls[index].id = tc.id;
+                                            if (tc.function?.name) toolCalls[index].function.name += tc.function.name;
+                                            if (tc.function?.arguments) toolCalls[index].function.arguments += tc.function.arguments;
+                                        }
                                     }
                                 } catch (e) {}
                             }
                         }
                     }
+
+                    // Process intercepted Tool Calls after stream chunk is finished
+                    if (toolCalls.length > 0) {
+                        messagesArray.push({
+                            role: "assistant",
+                            content: loopText || null, // Null if only a tool call was made
+                            tool_calls: toolCalls
+                        });
+
+                        for (const tc of toolCalls) {
+                            if (tc.function.name === "read_file") {
+                                let fileContent = "";
+                                let args: any = {};
+                                try {
+                                    args = JSON.parse(tc.function.arguments);
+
+                                    // Notify frontend visually that this specific model is reading a file
+                                    const notifyMsg = `\n\n> 🔍 *[${rm.modelName}] Reading file: \`${args.filePath}\`*\n\n`;
+                                    fullText += notifyMsg;
+                                    event.node.res.write(`data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: notifyMsg })}\n\n`);
+
+                                    const cleanPath = args.filePath.replace(/^\//, '');
+                                    const fullPath = path.join(process.cwd(), '.storage', 'github', project.slug, cleanPath);
+
+                                    fileContent = await fs.readFile(fullPath, 'utf-8');
+                                } catch (err: any) {
+                                    fileContent = `Error reading file: ${err.message}. Tell the user the file doesn't exist or is inaccessible.`;
+                                }
+
+                                messagesArray.push({
+                                    role: "tool",
+                                    tool_call_id: tc.id,
+                                    name: tc.function.name,
+                                    content: fileContent
+                                });
+                            }
+                        }
+
+                        // Recursively call the stream again with the new file context
+                        return await executeAIStream(messagesArray);
+                    }
+
+                    return fullText;
                 }
+
+                // Start the execution loop for this model
+                await executeAIStream(aiMessages);
 
                 const latency = Date.now() - t0;
 
                 // --- 2. KREDIT LEVONÁSA A STREAM VÉGÉN ---
-                let cost = usageData?.estimated_cost*1.25;
+                let cost = usageData?.estimated_cost * 1.25;
                 if (typeof cost !== 'number' || cost === 0) {
                     const totalTokens = usageData?.total_tokens || 10;
                     cost = totalTokens * 0.000001;
@@ -216,7 +305,7 @@ export default defineEventHandler(async (event) => {
                     await db.insert(messages).values({
                         conversationId,
                         sender: "assistant",
-                        content: fullText,
+                        content: fullText, // Save the fully aggregated text including tool notices
                         metaJson: {
                             model: rm.modelName,
                             latencyMs: latency,

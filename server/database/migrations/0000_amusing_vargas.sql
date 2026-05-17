@@ -1,77 +1,78 @@
 CREATE TABLE "attachments" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"filename" text NOT NULL,
-	"path" text NOT NULL,
-	"mime_type" text NOT NULL,
-	"message_id" integer,
-	"created_at" timestamp DEFAULT now() NOT NULL
+                               "id" serial PRIMARY KEY NOT NULL,
+                               "filename" text NOT NULL,
+                               "path" text NOT NULL,
+                               "mime_type" text NOT NULL,
+                               "message_id" integer,
+                               "created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "conversations" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"project_id" integer NOT NULL,
-	"title" text,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+                                 "id" serial PRIMARY KEY NOT NULL,
+                                 "project_id" integer NOT NULL,
+                                 "title" text,
+                                 "created_at" timestamp DEFAULT now() NOT NULL,
+                                 "updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "messages" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"conversation_id" integer NOT NULL,
-	"sender" text NOT NULL,
-	"content" text NOT NULL,
-	"meta_json" jsonb,
-	"created_at" timestamp DEFAULT now() NOT NULL
+                            "id" serial PRIMARY KEY NOT NULL,
+                            "conversation_id" integer NOT NULL,
+                            "sender" text NOT NULL,
+                            "content" text NOT NULL,
+                            "meta_json" jsonb,
+                            "created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "projects" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"slug" text NOT NULL,
-	"user_id" integer NOT NULL,
-	"name" text NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "projects_slug_unique" UNIQUE("slug")
+                            "id" serial PRIMARY KEY NOT NULL,
+                            "slug" text NOT NULL,
+                            "user_id" integer NOT NULL,
+                            "name" text NOT NULL,
+                            "created_at" timestamp DEFAULT now() NOT NULL,
+                            CONSTRAINT "projects_slug_unique" UNIQUE("slug")
 );
 --> statement-breakpoint
 CREATE TABLE "run_models" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"run_id" integer NOT NULL,
-	"model_name" text NOT NULL,
-	"status" text DEFAULT 'queued' NOT NULL,
-	"latency_ms" integer,
-	"error_code" text,
-	"error_message" text,
-	"started_at" timestamp,
-	"finished_at" timestamp
+                              "id" serial PRIMARY KEY NOT NULL,
+                              "run_id" integer NOT NULL,
+                              "model_name" text NOT NULL,
+                              "status" text DEFAULT 'queued' NOT NULL,
+                              "latency_ms" integer,
+                              "error_code" text,
+                              "error_message" text,
+                              "started_at" timestamp,
+                              "finished_at" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "run_outputs" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"run_model_id" integer NOT NULL,
-	"output_text" text NOT NULL,
-	"raw_response_json" jsonb
+                               "id" serial PRIMARY KEY NOT NULL,
+                               "run_model_id" integer NOT NULL,
+                               "output_text" text NOT NULL,
+                               "raw_response_json" jsonb
 );
 --> statement-breakpoint
 CREATE TABLE "runs" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"project_id" integer NOT NULL,
-	"conversation_id" integer,
-	"created_by" integer NOT NULL,
-	"status" text DEFAULT 'running' NOT NULL,
-	"user_input" text NOT NULL,
-	"params_json" jsonb,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"finished_at" timestamp
+                        "id" serial PRIMARY KEY NOT NULL,
+                        "project_id" integer NOT NULL,
+                        "conversation_id" integer,
+                        "created_by" integer NOT NULL,
+                        "status" text DEFAULT 'running' NOT NULL,
+                        "user_input" text NOT NULL,
+                        "params_json" jsonb,
+                        "created_at" timestamp DEFAULT now() NOT NULL,
+                        "finished_at" timestamp
 );
 --> statement-breakpoint
 CREATE TABLE "users" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"email" text NOT NULL,
-	"password_hash" text NOT NULL,
-	"password_salt" text NOT NULL,
-	"role" text DEFAULT 'user' NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "users_email_unique" UNIQUE("email")
+                         "id" serial PRIMARY KEY NOT NULL,
+                         "email" text NOT NULL,
+                         "password_hash" text NOT NULL,
+                         "password_salt" text NOT NULL,
+                         "role" text DEFAULT 'user' NOT NULL,
+                         "credits" double precision DEFAULT 0 NOT NULL,
+                         "created_at" timestamp DEFAULT now() NOT NULL,
+                         CONSTRAINT "users_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
 ALTER TABLE "attachments" ADD CONSTRAINT "attachments_message_id_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."messages"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
