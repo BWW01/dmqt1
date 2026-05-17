@@ -89,16 +89,7 @@ export default defineEventHandler(async (event) => {
             if (ip?.startsWith('::ffff:')) {
                 ip = ip.slice(7);
             }
-
-            const isLocalIp =
-                !ip ||
-                ip === '::1' ||
-                ip === '127.0.0.1' ||
-                ip.startsWith('172.') ||
-                ip.startsWith('192.168.') ||
-                ip.startsWith('10.');
-
-            if (!isLocalIp && ip) {
+            if (ip) {
                 const locRes = await fetch(`https://freeipapi.com/api/json/${ip}`);
                 if (locRes.ok) {
                     const data = await locRes.json();
