@@ -86,25 +86,27 @@ export default defineEventHandler(async (event) => {
     if (includeLocation) {
         try {
             let ip = getRequestIP(event, { xForwardedFor: true });
-            console.log(ip);
+            if (ip?.startsWith('::ffff:')) {
+                ip = ip.slice(7);
+            }
+
             const isLocalIp =
                 !ip ||
                 ip === '::1' ||
-                ip.includes('127.0.0.1') ||
+                ip === '127.0.0.1' ||
                 ip.startsWith('172.') ||
                 ip.startsWith('192.168.') ||
                 ip.startsWith('10.');
 
             if (!isLocalIp && ip) {
-                // Use HTTPS endpoint (requires paid plan on ip-api, or swap provider)
                 const locRes = await fetch(`https://freeipapi.com/api/json/${ip}`);
-                console.log(locationData);
                 if (locRes.ok) {
                     const data = await locRes.json();
-                    if (data.status === "success") {
+                    if (data.ipAddress) {
                         locationData = data;
                     }
                 }
+                console.log(locationData);
             }
         } catch (e) {
             console.error("Location fetch error", e);
