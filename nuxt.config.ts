@@ -23,6 +23,7 @@ export default defineNuxtConfig({
         jwtSecret: process.env.JWT_SECRET || "change-me-in-production",
         deepinfraApiKey: process.env.DEEPINFRA_API_KEY || "",
         databaseUrl: process.env.DATABASE_URL || "",
+        githubToken: process.env.GITHUB_TOKEN,
     },
     nitro: {
         preset: "node-server",

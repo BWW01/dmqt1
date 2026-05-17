@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const GITHUB_API_BASE = "https://api.github.com";
 const MAX_FILES = 500;
-const MAX_FILE_SIZE_BYTES = 500 * 1024; // 500KB per file
+const MAX_FILE_SIZE_BYTES = 500 * 1024;
 
 const generateSlug = (name: string) => {
     const baseSlug = name
@@ -30,36 +30,83 @@ export default defineEventHandler(async (event) => {
     if (!match) throw createError({ statusCode: 400, message: "Invalid GitHub identifier" });
     const [_, owner, repo] = match;
 
+    // Add token from runtime config
+    const config = useRuntimeConfig();
+    const githubToken = config.githubToken as string | undefined;
+
     const headers: HeadersInit = {
         'User-Agent': 'CodeContext-Importer',
-        'Accept': 'application/vnd.github.v3+json'
+        'Accept': 'application/vnd.github.v3+json',
+        ...(githubToken ? { 'Authorization': `Bearer ${githubToken}` } : {})
     };
 
-    let branch = userBranch || "main";
-    if (!userBranch) {
+    // Resolve branch with fallback chain: user input → default_branch → master → main
+    let branch = userBranch;
+    if (!branch) {
         try {
-            const repoInfo = await (
-                await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}`, { headers })
-            ).json();
-            branch = repoInfo.default_branch || "main";
-        } catch {
-            // Fall back to "main"
+            const repoRes = await fetch(
+                `${GITHUB_API_BASE}/repos/${owner}/${repo}`,
+                { headers }
+            );
+            if (repoRes.ok) {
+                const repoInfo = await repoRes.json();
+                branch = repoInfo.default_branch;
+                console.log(`[GitHub] Detected default branch: ${branch}`);
+            } else {
+                const errBody = await repoRes.json().catch(() => ({}));
+                console.warn(`[GitHub] Repo info fetch failed: ${repoRes.status}`, errBody);
+            }
+        } catch (e) {
+            console.warn("[GitHub] Failed to fetch repo info:", e);
         }
     }
 
-    // 1. Fetch File Tree
-    const treeRes = await fetch(
-        `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
-        { headers }
-    );
-    if (!treeRes.ok) {
-        throw createError({ statusCode: 404, message: "Repository or branch not found." });
+    // Try branches in order until one works
+    const branchCandidates = branch
+        ? [branch]
+        : ["main", "master", "dev", "develop"];
+
+    let treeData: any = null;
+    let resolvedBranch: string | null = null;
+
+    for (const candidate of branchCandidates) {
+        const treeRes = await fetch(
+            `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${candidate}?recursive=1`,
+            { headers }
+        );
+
+        if (treeRes.ok) {
+            treeData = await treeRes.json();
+            resolvedBranch = candidate;
+            console.log(`[GitHub] Resolved branch: ${resolvedBranch}`);
+            break;
+        }
+
+        const errBody = await treeRes.json().catch(() => ({}));
+        console.warn(
+            `[GitHub] Tree fetch failed for branch "${candidate}": ${treeRes.status}`,
+            errBody
+        );
+
+        // Surface auth/rate-limit errors immediately — no point trying other branches
+        if (treeRes.status === 401 || treeRes.status === 403) {
+            throw createError({
+                statusCode: 502,
+                message: `GitHub API error (${treeRes.status}): ${(errBody as any)?.message ?? "Unauthorized or rate limited"}`
+            });
+        }
     }
 
-    const treeData = await treeRes.json();
+    if (!treeData) {
+        throw createError({
+            statusCode: 404,
+            message: `Could not find repository "${owner}/${repo}" or any of its branches. Make sure the repo is public or provide a GitHub token.`
+        });
+    }
+
     const allItems: any[] = treeData.tree || [];
 
-    // 2. Filter allowed files
+    // Filter allowed files
     const allowedExtensions = [
         '.ts', '.js', '.vue', '.css', '.html', '.md',
         '.json', '.py', '.go', '.rs', '.sql', '.yaml', '.sh'
@@ -78,7 +125,7 @@ export default defineEventHandler(async (event) => {
         })
         .slice(0, MAX_FILES);
 
-    // 3. Resolve Project (existing or new)
+    // Resolve project
     let projectId: number;
     let slug = existingProjectSlug;
 
@@ -104,15 +151,14 @@ export default defineEventHandler(async (event) => {
 
     const projectDir = path.resolve(process.cwd(), '.storage', 'github', slug);
 
-    // 4. Download and save files locally
-    let treeMarkdown = `### Repository Map: ${owner}/${repo}\n\n\`\`\`text\n`;
+    // Download and save files
+    let treeMarkdown = `### Repository Map: ${owner}/${repo} (branch: ${resolvedBranch})\n\n\`\`\`text\n`;
     let importedCount = 0;
     const failedFiles: string[] = [];
     const skippedFiles: string[] = [];
 
     for (const file of filteredFiles) {
         try {
-            // Fix #5: Check file size before downloading content
             if (file.size && file.size > MAX_FILE_SIZE_BYTES) {
                 skippedFiles.push(file.path);
                 treeMarkdown += `/${file.path} [skipped: too large (${Math.round(file.size / 1024)}KB)]\n`;
@@ -120,7 +166,7 @@ export default defineEventHandler(async (event) => {
             }
 
             const fileRes = await fetch(
-                `${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}?ref=${branch}`,
+                `${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}?ref=${resolvedBranch}`,
                 { headers }
             );
             if (!fileRes.ok) {
@@ -130,7 +176,6 @@ export default defineEventHandler(async (event) => {
 
             const fileData = await fileRes.json();
 
-            // Double-check size from API response
             if (fileData.size && fileData.size > MAX_FILE_SIZE_BYTES) {
                 skippedFiles.push(file.path);
                 treeMarkdown += `/${file.path} [skipped: too large]\n`;
@@ -139,11 +184,9 @@ export default defineEventHandler(async (event) => {
 
             if (fileData.encoding === 'base64') {
                 const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
-
                 const relativePath = file.path.replace(/^\/+/, '');
                 const savePath = path.resolve(projectDir, relativePath);
 
-                // Path traversal guard
                 if (
                     !savePath.startsWith(projectDir + path.sep) &&
                     savePath !== projectDir
@@ -167,7 +210,6 @@ export default defineEventHandler(async (event) => {
 
     treeMarkdown += `\`\`\`\n\n*Note to AI: Use the \`read_file\` tool with the exact paths listed above to inspect any file's contents.*`;
 
-    // 5. Create initial conversation with repo map
     const [conversation] = await db
         .insert(conversations)
         .values({ projectId, title: `Repo Map: ${repo}` })
@@ -176,16 +218,16 @@ export default defineEventHandler(async (event) => {
     await db.insert(messages).values({
         conversationId: conversation.id,
         sender: "system",
-        content: `I have mapped **${importedCount}** files from \`${owner}/${repo}\` to this workspace.\n\n${treeMarkdown}`
+        content: `I have mapped **${importedCount}** files from \`${owner}/${repo}\` (branch: \`${resolvedBranch}\`) to this workspace.\n\n${treeMarkdown}`
     });
 
     return {
         success: true,
         projectSlug: slug,
+        branch: resolvedBranch,
         importedCount,
         skippedCount: skippedFiles.length,
         failedCount: failedFiles.length,
-        // Surface to client so users know what didn't import
         ...(failedFiles.length > 0 && { failedFiles }),
         ...(skippedFiles.length > 0 && { skippedFiles })
     };
