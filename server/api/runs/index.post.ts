@@ -212,15 +212,14 @@ export default defineEventHandler(async (event) => {
                 const aiMessages: any[] = [];
 
 // 1. Dynamically build context for the system prompt
-                let dynamicContext = "";
-                if (includeLocation && locationData?.status === "success") {
-                    dynamicContext += `\nUser's current location: ${locationData.city}, ${locationData.country}.`;
+                let dynamicContext = `\n\n--- SYSTEM CONTEXT ---\nCurrent absolute time: ${new Date().toISOString()}`;
+
+                if (locationData?.status === "success") {
+                    dynamicContext += `\nUser's location: ${locationData.city}, ${locationData.country}`;
                 }
-                dynamicContext += `\nCurrent server time: ${new Date().toISOString()}.`;
 
-// 2. Append the dynamic context to the system prompt
-                let finalSystemPrompt = systemPrompt ? systemPrompt + "\n" + dynamicContext : dynamicContext.trim();
-
+// Combine it with the existing system prompt
+                let finalSystemPrompt = (systemPrompt || "You are a helpful assistant.") + dynamicContext;
                 if (finalSystemPrompt) {
                     aiMessages.push({ role: "system", content: finalSystemPrompt });
                 }
