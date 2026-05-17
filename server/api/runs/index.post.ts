@@ -97,7 +97,7 @@ export default defineEventHandler(async (event) => {
 
             if (!isLocalIp && ip) {
                 // Use HTTPS endpoint (requires paid plan on ip-api, or swap provider)
-                const locRes = await fetch(`https://ip-api.com/json/${ip}`);
+                const locRes = await fetch(`https://freeipapi.com/api/json/${ip}`);
                 console.log(locationData);
                 if (locRes.ok) {
                     const data = await locRes.json();
