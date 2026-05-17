@@ -169,6 +169,9 @@ export default defineEventHandler(async (event) => {
 
                 // --- RECURSIVE FUNCTION FOR TOOL CALLS ---
                 async function executeAIStream(messagesArray: any[]): Promise<string> {
+                    console.log(`[DEBUG] Modell: ${rm.modelName}, Üzenetek száma: ${messagesArray.length}`);
+                    console.log(`[DEBUG] System prompt hossza: ${JSON.stringify(messagesArray[0]).length} karakter`);
+
                     const stream = await chatCompletionStream(rm.modelName, messagesArray, { ...(params ?? {}), tools });
 
                     if (!stream) return "";
@@ -184,6 +187,7 @@ export default defineEventHandler(async (event) => {
                         if (done) break;
 
                         const chunkText = decoder.decode(value, { stream: true });
+                        console.log("--- RAW CHUNK ---", chunkText);
                         const lines = chunkText.split("\n").filter((line: string) => line.trim() !== "");
 
                         for (const line of lines) {
@@ -194,6 +198,13 @@ export default defineEventHandler(async (event) => {
                                         usageData = data.usage;
                                     }
                                     const delta = data.choices?.[0]?.delta;
+
+                                    if (delta) {
+                                        console.log("DELTA CONTENT:", delta.content);
+                                        if (delta.tool_calls) {
+                                            console.log("DELTA TOOL CALLS:", JSON.stringify(delta.tool_calls));
+                                        }
+                                    }
 
                                     if (!delta) continue;
 
