@@ -7,7 +7,7 @@ import { runs, runModels, runOutputs, projects, messages, users } from "~~/serve
 import { chatCompletionStream } from "~~/server/utils/deepinfra";
 
 const MAX_TOOL_DEPTH = 5;
-const COST_FALLBACK_PER_TOKEN = 0.000002; // ~$2 per 1M tokens, adjust per model
+const COST_FALLBACK_PER_TOKEN = 0.000002;
 
 const tools = [
     {
@@ -97,7 +97,6 @@ export default defineEventHandler(async (event) => {
                         locationData = data;
                     }
                 }
-                console.log(locationData);
             }
         } catch (e) {
             console.error("Location fetch error", e);
@@ -114,7 +113,6 @@ export default defineEventHandler(async (event) => {
         const cleanPath = relativePath.replace(/^\/+/, '');
         const resolvedPath = path.resolve(projectDir, cleanPath);
 
-        // Fix #1: Path traversal guard
         if (!resolvedPath.startsWith(projectDir + path.sep) && resolvedPath !== projectDir) {
             processedInput = processedInput.replace(
                 match[0],
@@ -158,7 +156,7 @@ export default defineEventHandler(async (event) => {
 
     const insertedRunModels = await db.insert(runModels).values(runModelsData).returning();
 
-    // --- BUILD HISTORY BEFORE INSERTING USER MESSAGE (Fix #2) ---
+    // --- BUILD HISTORY BEFORE INSERTING USER MESSAGE ---
     let conversationHistory: any[] = [];
     if (conversationId) {
         conversationHistory = await db
@@ -177,7 +175,7 @@ export default defineEventHandler(async (event) => {
                 ? { location: `${locationData.cityName}, ${locationData.countryName}` }
                 : {})
         };
-
+        console.log(metaJson);
         await db.insert(messages).values({
             conversationId,
             sender: "user",
@@ -205,20 +203,21 @@ export default defineEventHandler(async (event) => {
             try {
                 const aiMessages: any[] = [];
 
-// 1. Dynamically build context for the system prompt
+                // 1. Dynamically build context for the system prompt
                 let dynamicContext = `\n\n--- SYSTEM CONTEXT ---\nCurrent absolute time: ${new Date().toISOString()}`;
 
-                if (locationData?.status === "success") {
-                    dynamicContext += `\nUser's location: ${locationData.city}, ${locationData.country}`;
+                // ✅ Fixed: use correct condition and freeipapi field names
+                if (locationData?.ipAddress) {
+                    dynamicContext += `\nUser's location: ${locationData.cityName}, ${locationData.countryName}`;
                 }
 
-// Combine it with the existing system prompt
-                let finalSystemPrompt = (systemPrompt || "You are a helpful assistant.") + dynamicContext;
-                if (finalSystemPrompt) {
-                    aiMessages.push({ role: "system", content: finalSystemPrompt });
-                }
+                // 2. Combine with the existing system prompt
+                const finalSystemPrompt =
+                    (systemPrompt || "You are a helpful assistant.") + dynamicContext;
 
-// 3. Append history
+                aiMessages.push({ role: "system", content: finalSystemPrompt });
+
+                // 3. Append history
                 for (const msg of conversationHistory) {
                     aiMessages.push({
                         role: msg.sender === "user" ? "user" : "assistant",
@@ -226,10 +225,9 @@ export default defineEventHandler(async (event) => {
                     });
                 }
 
-// 4. Append current input
+                // 4. Append current input
                 aiMessages.push({ role: "user", content: processedInput });
 
-                // Fix #3: void return, Fix #4: depth limit
                 async function executeAIStream(
                     messagesArray: any[],
                     depth = 0
@@ -329,7 +327,6 @@ export default defineEventHandler(async (event) => {
                                     const cleanPath = String(args.filePath).replace(/^\/+/, '');
                                     const resolvedPath = path.resolve(projectDir, cleanPath);
 
-                                    // Fix #1: Path traversal guard in tool call
                                     if (
                                         !resolvedPath.startsWith(projectDir + path.sep) &&
                                         resolvedPath !== projectDir
@@ -365,10 +362,12 @@ export default defineEventHandler(async (event) => {
 
                 const latency = Date.now() - t0;
 
-                // --- 2. ATOMIC CREDIT DEDUCTION (Fix #6) ---
-                let cost = typeof usageData?.estimated_cost === 'number' && usageData.estimated_cost > 0
-                    ? usageData.estimated_cost * 1.25
-                    : (usageData?.total_tokens || 10) * COST_FALLBACK_PER_TOKEN;
+                // --- ATOMIC CREDIT DEDUCTION ---
+                const cost =
+                    typeof usageData?.estimated_cost === "number" &&
+                    usageData.estimated_cost > 0
+                        ? usageData.estimated_cost * 1.25
+                        : (usageData?.total_tokens || 10) * COST_FALLBACK_PER_TOKEN;
 
                 if (cost > 0) {
                     const deductResult = await db
@@ -383,10 +382,12 @@ export default defineEventHandler(async (event) => {
                         .returning({ newCredits: users.credits });
 
                     if (deductResult.length === 0) {
-                        console.warn(`[WARN] Credit deduction failed for user ${userId} — insufficient balance at settlement.`);
+                        console.warn(
+                            `[WARN] Credit deduction failed for user ${userId} — insufficient balance at settlement.`
+                        );
                     }
                 }
-                // --------------------------------------------
+                // --------------------------------
 
                 await db.insert(runOutputs).values({
                     runModelId: rm.id,
@@ -394,7 +395,8 @@ export default defineEventHandler(async (event) => {
                     rawResponseJson: usageData || {}
                 });
 
-                await db.update(runModels)
+                await db
+                    .update(runModels)
                     .set({ status: "succeeded", latencyMs: latency, finishedAt: new Date() })
                     .where(eq(runModels.id, rm.id));
 
@@ -415,10 +417,10 @@ export default defineEventHandler(async (event) => {
                 event.node.res.write(
                     `data: ${JSON.stringify({ type: "done", modelId: rm.id, usage: usageData })}\n\n`
                 );
-
             } catch (err: any) {
                 const latency = Date.now() - t0;
-                await db.update(runModels)
+                await db
+                    .update(runModels)
                     .set({
                         status: "failed",
                         errorMessage: err.message,
@@ -442,7 +444,8 @@ export default defineEventHandler(async (event) => {
     const allOk = statuses.every((s) => s.status === "succeeded");
     const anyOk = statuses.some((s) => s.status === "succeeded");
 
-    await db.update(runs)
+    await db
+        .update(runs)
         .set({
             status: allOk ? "succeeded" : anyOk ? "partial" : "failed",
             finishedAt: new Date()
