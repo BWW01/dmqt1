@@ -3,7 +3,7 @@ name: Deploy DMQT
 on:
   push:
     branches:
-      - main # Ha a fő ágad neve 'master', írd át arra!
+      - master
 
 jobs:
   deploy:
