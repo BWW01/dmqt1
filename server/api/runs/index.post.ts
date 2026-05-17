@@ -173,7 +173,7 @@ export default defineEventHandler(async (event) => {
         const metaJson = {
             timestamp: new Date().toISOString(),
             systemPrompt: systemPrompt || "Not provided",
-            ...(locationData?.city != null
+            ...(locationData?.cityName != null
                 ? { location: `${locationData.cityName}, ${locationData.countryName}` }
                 : {})
         };
