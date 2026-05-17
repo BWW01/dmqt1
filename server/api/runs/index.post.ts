@@ -82,11 +82,11 @@ export default defineEventHandler(async (event) => {
 
     const projectDir = path.resolve(process.cwd(), '.storage', 'github', project.slug);
 
-    // --- LOCATION FETCH IF REQUESTED ---
     let locationData: any = null;
     if (includeLocation) {
         try {
             let ip = getRequestIP(event, { xForwardedFor: true });
+            console.log(ip);
             const isLocalIp =
                 !ip ||
                 ip === '::1' ||
