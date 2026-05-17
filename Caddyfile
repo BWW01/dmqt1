@@ -1,4 +1,0 @@
-# A 'localhost' kulcsszó aktiválja a Caddy belső CA-ját
-localhost {
-    reverse_proxy app:3000
-}
