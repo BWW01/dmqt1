@@ -24,7 +24,7 @@ const tools = [
 ];
 
 export default defineEventHandler(async (event) => {
-    const userId = event.context.user?.id; // Javítva az új auth logikához
+    const userId = event.context.user?.id;
 
     if (!userId) {
         throw createError({ statusCode: 401, message: "Unauthorized" });
@@ -170,7 +170,6 @@ export default defineEventHandler(async (event) => {
                 // --- RECURSIVE FUNCTION FOR TOOL CALLS ---
                 async function executeAIStream(messagesArray: any[]): Promise<string> {
                     console.log(`[DEBUG] Modell: ${rm.modelName}, Üzenetek száma: ${messagesArray.length}`);
-                    console.log(`[DEBUG] System prompt hossza: ${JSON.stringify(messagesArray[0]).length} karakter`);
 
                     const stream = await chatCompletionStream(rm.modelName, messagesArray, { ...(params ?? {}), tools });
 
@@ -187,8 +186,6 @@ export default defineEventHandler(async (event) => {
                         if (done) break;
 
                         const chunkText = decoder.decode(value, { stream: true });
-
-                        console.log("----- RAW CHUNK ---", chunkText);
                         const lines = chunkText.split("\n").filter((line: string) => line.trim() !== "");
 
                         for (const line of lines) {
@@ -200,13 +197,6 @@ export default defineEventHandler(async (event) => {
                                     }
                                     const delta = data.choices?.[0]?.delta;
 
-                                    if (delta) {
-                                        console.log("DELTA CONTENT:", delta.content);
-                                        if (delta.tool_calls) {
-                                            console.log("DELTA TOOL CALLS:", JSON.stringify(delta.tool_calls));
-                                        }
-                                    }
-
                                     if (!delta) continue;
 
                                     // Accumulate Standard Text
@@ -216,7 +206,7 @@ export default defineEventHandler(async (event) => {
                                         event.node.res.write(`data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: delta.content })}\n\n`);
                                     }
 
-                                    // Accumulate Tool Call Chunks
+                                    // Accumulate Tool Call Chunks safely to avoid duplication
                                     if (delta.tool_calls) {
                                         for (const tc of delta.tool_calls) {
                                             const index = tc.index || 0;
@@ -224,7 +214,7 @@ export default defineEventHandler(async (event) => {
                                                 toolCalls[index] = {
                                                     id: tc.id || "",
                                                     type: "function",
-                                                    function: { name: tc.function?.name || "", arguments: "" }
+                                                    function: { name: "", arguments: "" } // Initialize empty so += works correctly below
                                                 };
                                             }
                                             if (tc.id) toolCalls[index].id = tc.id;
@@ -232,22 +222,27 @@ export default defineEventHandler(async (event) => {
                                             if (tc.function?.arguments) toolCalls[index].function.arguments += tc.function.arguments;
                                         }
                                     }
-                                } catch (e) {}
+                                } catch (e) {
+                                    // Silently ignore incomplete JSON chunks that occasionally occur
+                                }
                             }
                         }
                     }
 
                     // Process intercepted Tool Calls after stream chunk is finished
-                    if (toolCalls.length > 0) {
+                    const validToolCalls = toolCalls.filter(Boolean); // Filter out any empty spots
+
+                    if (validToolCalls.length > 0) {
                         messagesArray.push({
                             role: "assistant",
-                            content: loopText || null, // Null if only a tool call was made
-                            tool_calls: toolCalls
+                            content: loopText || "",
+                            tool_calls: validToolCalls
                         });
 
-                        for (const tc of toolCalls) {
+                        for (const tc of validToolCalls) {
+                            let toolResultContent = "";
+
                             if (tc.function.name === "read_file") {
-                                let fileContent = "";
                                 let args: any = {};
                                 try {
                                     args = JSON.parse(tc.function.arguments);
@@ -260,21 +255,24 @@ export default defineEventHandler(async (event) => {
                                     const cleanPath = args.filePath.replace(/^\//, '');
                                     const fullPath = path.join(process.cwd(), '.storage', 'github', project.slug, cleanPath);
 
-                                    fileContent = await fs.readFile(fullPath, 'utf-8');
+                                    toolResultContent = await fs.readFile(fullPath, 'utf-8');
                                 } catch (err: any) {
-                                    fileContent = `Error reading file: ${err.message}. Tell the user the file doesn't exist or is inaccessible.`;
+                                    toolResultContent = `Error reading file: ${err.message}. Tell the user the file doesn't exist or is inaccessible.`;
                                 }
-
-                                messagesArray.push({
-                                    role: "tool",
-                                    tool_call_id: tc.id,
-                                    name: tc.function.name,
-                                    content: fileContent
-                                });
+                            } else {
+                                toolResultContent = `Error: Unknown tool "${tc.function.name}" called.`;
                             }
+
+                            // ALWAYS append a tool response to prevent LLM API validation crashes
+                            messagesArray.push({
+                                role: "tool",
+                                tool_call_id: tc.id,
+                                name: tc.function.name,
+                                content: toolResultContent
+                            });
                         }
 
-                        // Recursively call the stream again with the new file context
+                        // Recursively call the stream again with the new file context appended
                         return await executeAIStream(messagesArray);
                     }
 
@@ -294,7 +292,7 @@ export default defineEventHandler(async (event) => {
                 }
 
                 if (cost > 0) {
-                    // Az 'sql' segítségével vonjuk le, hogy a párhuzamos modellek ne írják felül egymást!
+                    // Az 'sql' segítségével vonjuk le, hogy a párhuzamos modellek ne írják felül egymást
                     await db.update(users)
                         .set({ credits: sql`${users.credits} - ${cost}` })
                         .where(eq(users.id, userId));
