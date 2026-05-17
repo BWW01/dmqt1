@@ -187,7 +187,8 @@ export default defineEventHandler(async (event) => {
                         if (done) break;
 
                         const chunkText = decoder.decode(value, { stream: true });
-                        console.log("--- RAW CHUNK ---", chunkText);
+
+                        console.log("----- RAW CHUNK ---", chunkText);
                         const lines = chunkText.split("\n").filter((line: string) => line.trim() !== "");
 
                         for (const line of lines) {
