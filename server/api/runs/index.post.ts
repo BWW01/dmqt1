@@ -1,177 +1,347 @@
-// server/api/projects/import-github.post.ts
-import { db } from "~~/server/utils/db";
-import { projects, conversations, messages } from "~~/server/database/schema";
-import { eq, and } from "drizzle-orm";
+// server/api/runs/index.post.ts
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { db } from "~~/server/utils/db";
+import { eq, and, asc, sql } from "drizzle-orm";
+import { runs, runModels, runOutputs, projects, messages, users } from "~~/server/database/schema";
+import { chatCompletionStream } from "~~/server/utils/deepinfra";
 
-const GITHUB_API_BASE = "https://api.github.com";
-
-const generateSlug = (name: string) => {
-    const baseSlug = name.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
-    return `${baseSlug}-${Math.random().toString(36).substring(2, 8)}`;
-};
+const tools = [
+    {
+        type: "function",
+        function: {
+            name: "read_file",
+            description: "Read the exact content of a source code file from the imported GitHub repository.",
+            parameters: {
+                type: "object",
+                properties: {
+                    filePath: { type: "string", description: "The relative path to the file (e.g. src/main.ts)" }
+                },
+                required: ["filePath"]
+            }
+        }
+    }
+];
 
 export default defineEventHandler(async (event) => {
-    console.log("[GitHub Import] --- Starting New Import Request ---");
+    const userId = event.context.user?.id; // Javítva az új auth logikához
 
-    const userId = event.context.user?.id;
-    console.log(`[GitHub Import] User ID: ${userId}`);
     if (!userId) {
-        console.error("[GitHub Import] Error: Unauthorized (No User ID)");
         throw createError({ statusCode: 401, message: "Unauthorized" });
     }
 
     const body = await readBody(event);
-    console.log("[GitHub Import] Request Body:", body);
+    const { models, userInput, params, projectSlug, conversationId, systemPrompt, includeLocation } = body;
 
-    const { repoUrl, branch: userBranch, existingProjectSlug } = body;
-    if (!repoUrl) {
-        console.error("[GitHub Import] Error: GitHub URL missing in body");
-        throw createError({ statusCode: 400, message: "GitHub URL required" });
+    if (!models?.length || !userInput || !projectSlug) {
+        throw createError({ statusCode: 400, message: "models, userInput, and projectSlug are required" });
     }
 
-    // Parse owner and repo
-    const match = repoUrl.match(/(?:github\.com\/)?([^/\s]+)\/([^/\s#?]+)/);
-    if (!match) {
-        console.error(`[GitHub Import] Error: Invalid GitHub identifier extracted from URL: ${repoUrl}`);
-        throw createError({ statusCode: 400, message: "Invalid GitHub identifier" });
+    // --- 1. KREDIT ELLENŐRZÉSE A FUTÁS ELŐTT ---
+    const [user] = await db
+        .select({ credits: users.credits })
+        .from(users)
+        .where(eq(users.id, userId));
+
+    const currentCredits = Number(user?.credits || 0);
+
+    if (!user || currentCredits <= 0) {
+        throw createError({
+            statusCode: 402,
+            message: `ACCESS_DENIED: Nincs elég tokened. Jelenlegi egyenleged: ${currentCredits}`
+        });
     }
-    const [_, owner, repo] = match;
-    console.log(`[GitHub Import] Parsed Owner: ${owner}, Repo: ${repo}`);
+    // -------------------------------------------
 
-    const headers: Record<string, string> = {
-        'User-Agent': 'CodeContext-Importer',
-        'Accept': 'application/vnd.github.v3+json'
-    };
+    const [project] = await db.select()
+        .from(projects)
+        .where(and(eq(projects.slug, projectSlug), eq(projects.userId, userId)))
+        .limit(1);
 
-    // Add GitHub Token if available (Highly recommended to avoid rate limits/404s)
-    if (process.env.GITHUB_TOKEN) {
-        headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
-        console.log("[GitHub Import] GITHUB_TOKEN found and added to headers.");
-    } else {
-        console.warn("[GitHub Import] WARNING: No GITHUB_TOKEN found. Requests are unauthenticated and subject to strict rate limits.");
+    if (!project) {
+        throw createError({ statusCode: 404, message: "Project not found" });
     }
 
-    let branch = userBranch || "main";
-    if (!userBranch) {
-        console.log(`[GitHub Import] No user branch provided. Attempting to fetch default branch for ${owner}/${repo}...`);
+    // --- LOKÁCIÓ LEKÉRDEZÉSE HA KÉRVE LETT ---
+    let locationData: any = null;
+    if (includeLocation) {
         try {
-            const repoRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}`, { headers });
-            const repoInfo = await repoRes.json();
-
-            if (repoRes.ok && repoInfo.default_branch) {
-                branch = repoInfo.default_branch;
-                console.log(`[GitHub Import] Successfully fetched default branch: ${branch}`);
-            } else {
-                console.warn(`[GitHub Import] Failed to fetch repo info (Status: ${repoRes.status}). Falling back to 'main'. API Response:`, repoInfo);
-                branch = "main";
+            let ip = getRequestIP(event, { xForwardedFor: true });
+            if (!ip || ip === '::1' || ip.includes('127.0.0.1') || ip.startsWith('172.')) {
+                ip = '8.8.8.8';
+            }
+            if (ip) {
+                const locRes = await fetch(`http://ip-api.com/json/${ip}`);
+                if (locRes.ok) {
+                    const data = await locRes.json();
+                    if (data.status === "success") {
+                        locationData = data;
+                    }
+                }
             }
         } catch (e) {
-            console.error("[GitHub Import] Exception while fetching default branch. Falling back to 'main'. Error:", e);
+            console.error("Location fetch error", e);
         }
-    } else {
-        console.log(`[GitHub Import] Using provided branch: ${branch}`);
     }
 
-    // 1. Fetch File Tree
-    const treeUrl = `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-    console.log(`[GitHub Import] 1. Fetching File Tree from: ${treeUrl}`);
-    const treeRes = await fetch(treeUrl, { headers });
+    // --- FÁJL TARTALOM BEOLVASÁSA ÉS BEILLESZTÉSE ---
+    let processedInput = userInput;
+    const attachmentRegex = /\[ATTACHMENT_STREAM: .*? \| PATH: (.*?)\]/g;
+    const matches = [...userInput.matchAll(attachmentRegex)];
 
-    if (!treeRes.ok) {
-        console.error(`[GitHub Import] Error: Failed to fetch tree. Status: ${treeRes.status} ${treeRes.statusText}`);
-        throw createError({ statusCode: 404, message: `Repository or branch not found.` });
-    }
+    for (const match of matches) {
+        const relativePath = match[1];
+        const cleanPath = relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
+        const fullPath = path.join(process.cwd(), '.storage', 'github', project.slug, cleanPath);
 
-    const treeData = await treeRes.json();
-    const allItems = treeData.tree || [];
-    console.log(`[GitHub Import] Successfully fetched tree. Total items found: ${allItems.length}`);
-
-    // 2. Filter allowed files
-    const allowedExtensions = ['.ts', '.js', '.vue', '.css', '.html', '.md', '.json', '.py', '.go', '.rs', '.sql', '.yaml', '.sh'];
-    const filteredFiles = allItems.filter((item: any) => {
-        if (item.type !== "blob") return false;
-        const ext = path.extname(item.path).toLowerCase();
-        return allowedExtensions.includes(ext) && !item.path.includes('node_modules/') && !item.path.includes('.git/') && !item.path.includes('dist/');
-    }).slice(0, 500);
-
-    console.log(`[GitHub Import] 2. Filtered files down to: ${filteredFiles.length} files (Max 500)`);
-
-    // 3. Resolve Project (Existing or New)
-    let projectId: number;
-    let slug = existingProjectSlug;
-
-    console.log(`[GitHub Import] 3. Resolving Project. Existing Slug: ${existingProjectSlug || 'None'}`);
-
-    if (existingProjectSlug) {
-        const [existingProject] = await db.select()
-            .from(projects)
-            .where(and(eq(projects.slug, existingProjectSlug), eq(projects.userId, userId)))
-            .limit(1);
-
-        if (!existingProject) {
-            console.error(`[GitHub Import] Error: Existing project not found in DB for slug: ${existingProjectSlug}`);
-            throw createError({ statusCode: 404, message: "Project not found" });
-        }
-        projectId = existingProject.id;
-        console.log(`[GitHub Import] Linked to existing project ID: ${projectId}`);
-    } else {
-        slug = generateSlug(repo);
-        console.log(`[GitHub Import] Generating new project with slug: ${slug}`);
-        const [newProject] = await db.insert(projects).values({ name: `${owner}/${repo}`, userId, slug }).returning();
-        projectId = newProject.id;
-        console.log(`[GitHub Import] Created new project ID: ${projectId}`);
-    }
-
-    // 4. Download and Save Files Locally
-    const projectDir = path.join(process.cwd(), '.storage', 'github', slug);
-    console.log(`[GitHub Import] 4. Setup local storage directory: ${projectDir}`);
-
-    let treeMarkdown = `### Repository Map: ${owner}/${repo}\n\n\`\`\`text\n`;
-    let importedCount = 0;
-
-    for (const file of filteredFiles) {
         try {
-            console.log(`[GitHub Import]   -> Fetching file: ${file.path}`);
-            const fileRes = await fetch(`${GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${file.path}?ref=${branch}`, { headers });
-
-            if (!fileRes.ok) {
-                console.warn(`[GitHub Import]   -> Failed to fetch file: ${file.path} (Status: ${fileRes.status})`);
-                continue;
-            }
-
-            const fileData = await fileRes.json();
-            if (fileData.encoding === 'base64') {
-                const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
-                const savePath = path.join(projectDir, file.path);
-
-                await fs.mkdir(path.dirname(savePath), { recursive: true });
-                await fs.writeFile(savePath, content);
-
-                treeMarkdown += `/${file.path}\n`;
-                importedCount++;
-            } else {
-                console.warn(`[GitHub Import]   -> Unsupported encoding for ${file.path}: ${fileData.encoding}`);
-            }
-        } catch (e) {
-            console.error(`[GitHub Import]   -> Exception while processing file ${file.path}:`, e);
+            const fileContent = await fs.readFile(fullPath, 'utf-8');
+            processedInput = processedInput.replace(match[0], `\n\n--- ATTACHED_FILE: ${relativePath} ---\n${fileContent}\n`);
+        } catch (err: any) {
+            processedInput = processedInput.replace(match[0], `\n[Fajl olvasasi hiba: ${relativePath}]\n`);
         }
     }
 
-    console.log(`[GitHub Import] Successfully downloaded ${importedCount} files.`);
+    // Run rekord létrehozása
+    const [run] = await db.insert(runs).values({
+        projectId: project.id,
+        conversationId: conversationId ?? null,
+        createdBy: userId,
+        userInput,
+        paramsJson: params ?? {},
+        status: "running",
+    }).returning();
 
-    treeMarkdown += `\`\`\`\n\n*Note to AI: Use the \`read_file\` tool with the exact paths listed above to inspect the contents of any file.*`;
+    const runModelsData = (models as string[]).map((modelName) => ({
+        runId: run.id,
+        modelName,
+        status: "running"
+    }));
 
-    // 5. Create Initial Conversation Context
-    console.log(`[GitHub Import] 5. Creating Initial Conversation Context...`);
-    const [conversation] = await db.insert(conversations).values({ projectId: projectId, title: `Repo Map: ${repo}` }).returning();
-    await db.insert(messages).values({
-        conversationId: conversation.id,
-        sender: "system",
-        content: `I have mapped **${importedCount}** files from \`${owner}/${repo}\` to this workspace. \n\n${treeMarkdown}`
-    });
+    const insertedRunModels = await db.insert(runModels).values(runModelsData).returning();
 
-    console.log(`[GitHub Import] --- Import Successful ---`);
-    return { success: true, projectSlug: slug };
+    // --- FELHASZNÁLÓI ÜZENET MENTÉSE METAADATOKKAL ---
+    if (conversationId) {
+        const metaJson = {
+            timestamp: new Date().toISOString(),
+            systemPrompt: systemPrompt || "Nincs megadva",
+            ...(locationData && locationData.status === "success" ? { location: `${locationData.city}, ${locationData.country}` } : {})
+        };
+
+        await db.insert(messages).values({
+            conversationId,
+            sender: "user",
+            content: userInput,
+            metaJson: metaJson
+        });
+    }
+
+    // --- STREAMING (SSE) FEJLÉCEK BEÁLLÍTÁSA ---
+    setHeader(event, 'Content-Type', 'text/event-stream');
+    setHeader(event, 'Cache-Control', 'no-cache');
+    setHeader(event, 'Connection', 'keep-alive');
+
+    event.node.res.write(`data: ${JSON.stringify({ type: "init", runId: run.id })}\n\n`);
+
+    // Párhuzamos stream-ek indítása és feldolgozása
+    await Promise.allSettled(
+        insertedRunModels.map(async (rm) => {
+            const t0 = Date.now();
+            let fullText = "";
+            let usageData: any = null;
+
+            try {
+                const aiMessages: any[] = [];
+                if (systemPrompt) aiMessages.push({ role: "system", content: systemPrompt });
+
+                if (conversationId) {
+                    const history = await db.select()
+                        .from(messages)
+                        .where(eq(messages.conversationId, conversationId))
+                        .orderBy(asc(messages.createdAt));
+
+                    for (const msg of history) {
+                        aiMessages.push({ role: msg.sender === "user" ? "user" : "assistant", content: msg.content });
+                    }
+                }
+
+                aiMessages.push({ role: "user", content: processedInput });
+
+                // --- RECURSIVE FUNCTION FOR TOOL CALLS ---
+                async function executeAIStream(messagesArray: any[]): Promise<string> {
+                    console.log(`[DEBUG] Modell: ${rm.modelName}, Üzenetek száma: ${messagesArray.length}`);
+                    console.log(`[DEBUG] System prompt hossza: ${JSON.stringify(messagesArray[0]).length} karakter`);
+
+                    const stream = await chatCompletionStream(rm.modelName, messagesArray, { ...(params ?? {}), tools });
+
+                    if (!stream) return "";
+
+                    const reader = stream.getReader();
+                    const decoder = new TextDecoder("utf-8");
+
+                    let loopText = "";
+                    let toolCalls: any[] = [];
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const chunkText = decoder.decode(value, { stream: true });
+
+                        console.log("----- RAW CHUNK ---", chunkText);
+                        const lines = chunkText.split("\n").filter((line: string) => line.trim() !== "");
+
+                        for (const line of lines) {
+                            if (line.startsWith("data: ") && line !== "data: [DONE]") {
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+                                    if (data.usage) {
+                                        usageData = data.usage;
+                                    }
+                                    const delta = data.choices?.[0]?.delta;
+
+                                    if (delta) {
+                                        console.log("DELTA CONTENT:", delta.content);
+                                        if (delta.tool_calls) {
+                                            console.log("DELTA TOOL CALLS:", JSON.stringify(delta.tool_calls));
+                                        }
+                                    }
+
+                                    if (!delta) continue;
+
+                                    // Accumulate Standard Text
+                                    if (delta.content) {
+                                        loopText += delta.content;
+                                        fullText += delta.content;
+                                        event.node.res.write(`data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: delta.content })}\n\n`);
+                                    }
+
+                                    // Accumulate Tool Call Chunks
+                                    if (delta.tool_calls) {
+                                        for (const tc of delta.tool_calls) {
+                                            const index = tc.index || 0;
+                                            if (!toolCalls[index]) {
+                                                toolCalls[index] = {
+                                                    id: tc.id || "",
+                                                    type: "function",
+                                                    function: { name: tc.function?.name || "", arguments: "" }
+                                                };
+                                            }
+                                            if (tc.id) toolCalls[index].id = tc.id;
+                                            if (tc.function?.name) toolCalls[index].function.name += tc.function.name;
+                                            if (tc.function?.arguments) toolCalls[index].function.arguments += tc.function.arguments;
+                                        }
+                                    }
+                                } catch (e) {}
+                            }
+                        }
+                    }
+
+                    // Process intercepted Tool Calls after stream chunk is finished
+                    if (toolCalls.length > 0) {
+                        messagesArray.push({
+                            role: "assistant",
+                            content: loopText || null, // Null if only a tool call was made
+                            tool_calls: toolCalls
+                        });
+
+                        for (const tc of toolCalls) {
+                            if (tc.function.name === "read_file") {
+                                let fileContent = "";
+                                let args: any = {};
+                                try {
+                                    args = JSON.parse(tc.function.arguments);
+
+                                    // Notify frontend visually that this specific model is reading a file
+                                    const notifyMsg = `\n\n> 🔍 *[${rm.modelName}] Reading file: \`${args.filePath}\`*\n\n`;
+                                    fullText += notifyMsg;
+                                    event.node.res.write(`data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: notifyMsg })}\n\n`);
+
+                                    const cleanPath = args.filePath.replace(/^\//, '');
+                                    const fullPath = path.join(process.cwd(), '.storage', 'github', project.slug, cleanPath);
+
+                                    fileContent = await fs.readFile(fullPath, 'utf-8');
+                                } catch (err: any) {
+                                    fileContent = `Error reading file: ${err.message}. Tell the user the file doesn't exist or is inaccessible.`;
+                                }
+
+                                messagesArray.push({
+                                    role: "tool",
+                                    tool_call_id: tc.id,
+                                    name: tc.function.name,
+                                    content: fileContent
+                                });
+                            }
+                        }
+
+                        // Recursively call the stream again with the new file context
+                        return await executeAIStream(messagesArray);
+                    }
+
+                    return fullText;
+                }
+
+                // Start the execution loop for this model
+                await executeAIStream(aiMessages);
+
+                const latency = Date.now() - t0;
+
+                // --- 2. KREDIT LEVONÁSA A STREAM VÉGÉN ---
+                let cost = usageData?.estimated_cost * 1.25;
+                if (typeof cost !== 'number' || cost === 0) {
+                    const totalTokens = usageData?.total_tokens || 10;
+                    cost = totalTokens * 0.000001;
+                }
+
+                if (cost > 0) {
+                    // Az 'sql' segítségével vonjuk le, hogy a párhuzamos modellek ne írják felül egymást!
+                    await db.update(users)
+                        .set({ credits: sql`${users.credits} - ${cost}` })
+                        .where(eq(users.id, userId));
+                }
+                // ------------------------------------------
+
+                await db.insert(runOutputs).values({
+                    runModelId: rm.id,
+                    outputText: fullText,
+                    rawResponseJson: usageData || {}
+                });
+
+                await db.update(runModels).set({
+                    status: "succeeded",
+                    latencyMs: latency,
+                    finishedAt: new Date()
+                }).where(eq(runModels.id, rm.id));
+
+                if (conversationId) {
+                    await db.insert(messages).values({
+                        conversationId,
+                        sender: "assistant",
+                        content: fullText, // Save the fully aggregated text including tool notices
+                        metaJson: {
+                            model: rm.modelName,
+                            latencyMs: latency,
+                            timestamp: new Date().toISOString(),
+                            usage: usageData
+                        }
+                    });
+                }
+
+                event.node.res.write(`data: ${JSON.stringify({ type: "done", modelId: rm.id, usage: usageData })}\n\n`);
+
+            } catch (err: any) {
+                const latency = Date.now() - t0;
+                await db.update(runModels).set({ status: "failed", errorMessage: err.message, latencyMs: latency, finishedAt: new Date() }).where(eq(runModels.id, rm.id));
+                event.node.res.write(`data: ${JSON.stringify({ type: "error", modelId: rm.id, error: err.message })}\n\n`);
+            }
+        })
+    );
+
+    const statuses = await db.select({ status: runModels.status }).from(runModels).where(eq(runModels.runId, run.id));
+    const allOk = statuses.every((s) => s.status === "succeeded");
+    const anyOk = statuses.some((s) => s.status === "succeeded");
+
+    await db.update(runs).set({ status: allOk ? "succeeded" : anyOk ? "partial" : "failed", finishedAt: new Date() }).where(eq(runs.id, run.id));
+
+    event.node.res.end();
 });
