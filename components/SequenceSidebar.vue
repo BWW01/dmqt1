@@ -15,7 +15,7 @@ const newConvTitle = defineModel<string>("newConvTitle", { required: true });
 <template>
   <div class="flex flex-col h-full gap-6">
     <div class="flex flex-col flex-1 min-h-0">
-      <h2 class="text-xs font-black text-stone-500 uppercase mb-4 tracking-widest border-l-2 border-green-600 pl-2">
+      <h2 class="text-xs font-black text-zinc-500 uppercase mb-4 tracking-widest border-l-2 border-orange-500 pl-2">
         Sequences
       </h2>
 
@@ -25,19 +25,23 @@ const newConvTitle = defineModel<string>("newConvTitle", { required: true });
             :key="conv.id"
             @click="emit('select', conv.id)"
             :class="[
-            'w-full text-left p-3 text-[11px] border transition-all duration-200 uppercase font-bold',
-            selectedConversationId === conv.id
-              ? 'border-green-600 bg-green-50 text-green-700 shadow-sm'
-              : 'border-stone-300 text-stone-500 hover:border-stone-400 bg-white',
-          ]"
+              'w-full text-left p-3 text-[11px] border transition-all duration-200 uppercase font-bold',
+              selectedConversationId === conv.id
+                ? 'border-orange-500 bg-orange-950 text-orange-400'
+                : 'border-zinc-700 text-zinc-400 hover:border-zinc-600 bg-zinc-900',
+            ]"
         >
           {{ conv.title || "NULL_SEQUENCE" }}
         </button>
       </div>
     </div>
 
-    <div class="bg-white border border-stone-300 p-4 flex-none">
-      <input v-model="newConvTitle" placeholder="NEW_SEQ_NAME..." class="w-full bg-stone-50 border border-stone-300 p-2 text-[10px] text-green-700 mb-2 focus:outline-none focus:border-green-600" />
+    <div class="bg-zinc-900 border border-zinc-700 p-4 flex-none">
+      <input
+          v-model="newConvTitle"
+          placeholder="NEW_SEQ_NAME..."
+          class="w-full bg-zinc-950 border border-zinc-700 p-2 text-[10px] text-orange-400 mb-2 focus:outline-none focus:border-orange-500 placeholder-zinc-600"
+      />
       <button @click="emit('create')" class="btn-industrial w-full text-[10px] py-2">
         INIT_NEW_SEQUENCE
       </button>
