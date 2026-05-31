@@ -8,6 +8,7 @@ import { chatCompletionStream } from "~~/server/utils/deepinfra";
 
 const MAX_TOOL_DEPTH = 5;
 const COST_FALLBACK_PER_TOKEN = 0.000002;
+const CREDIT_UNIT = 1_000_000; // 1 credit = $0.000001
 
 const tools = [
     {
@@ -598,11 +599,12 @@ export default defineEventHandler(async (event) => {
                 const latency = Date.now() - t0;
 
                 // --- ATOMIC CREDIT DEDUCTION ---
-                const cost =
+                const dollarCost =
                     typeof usageData?.estimated_cost === "number" &&
                     usageData.estimated_cost > 0
                         ? usageData.estimated_cost * 1.25
                         : (usageData?.total_tokens || 10) * COST_FALLBACK_PER_TOKEN;
+                const cost = Math.ceil(dollarCost * CREDIT_UNIT);
 
                 if (cost > 0) {
                     const deductResult = await db

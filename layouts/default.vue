@@ -13,7 +13,7 @@ const { logout, user } = useAuth();
         <span class="text-zinc-400">OP: {{ user.email }}</span>
 
         <span class="text-orange-400 bg-orange-950 border border-orange-800 px-2 py-1">
-          TOKENS: {{ user.credits.toFixed(10) }}
+          CREDITS: ${{ (user.credits / 1_000_000).toFixed(4) }}
         </span>
 
         <NuxtLink to="/" class="text-zinc-500 hover:text-zinc-50 transition-colors">

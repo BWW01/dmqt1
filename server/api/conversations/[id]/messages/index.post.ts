@@ -5,6 +5,7 @@ import { messages, users, conversations } from "~~/server/database/schema";
 import { chatCompletionStream } from "~~/server/utils/deepinfra";
 
 const COST_FALLBACK_PER_TOKEN = 0.000001;
+const CREDIT_UNIT = 1_000_000; // 1 credit = $0.000001
 
 export default defineEventHandler(async (event) => {
     const userId = event.context.user?.id;
@@ -90,9 +91,10 @@ export default defineEventHandler(async (event) => {
         }
 
         // Atomic credit deduction
-        const cost = typeof usageData?.estimated_cost === "number" && usageData.estimated_cost > 0
+        const dollarCost = typeof usageData?.estimated_cost === "number" && usageData.estimated_cost > 0
             ? usageData.estimated_cost
             : (usageData?.total_tokens || 10) * COST_FALLBACK_PER_TOKEN;
+        const cost = Math.ceil(dollarCost * CREDIT_UNIT);
 
         if (cost > 0) {
             await db.update(users)
