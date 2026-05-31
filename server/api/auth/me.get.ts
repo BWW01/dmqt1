@@ -3,8 +3,6 @@ import { db } from "~~/server/utils/db";
 import { eq } from "drizzle-orm";
 import { users } from "~~/server/database/schema";
 
-import { verifyPassword, signToken } from "~~/server/utils/auth";
-import { chatCompletion, listModels } from "~~/server/utils/deepinfra";
 
 export default defineEventHandler(async (event) => {
     const userId = event.context.user?.id;

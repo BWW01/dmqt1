@@ -84,17 +84,6 @@ export function useAuth() {
     }
 
     async function logout(redirect = true) {
-        if (token.value) {
-            try {
-                await $fetch("/api/auth/logout", {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${token.value}` },
-                });
-            } catch {
-                // ignore
-            }
-        }
-
         clearAuth();
 
         if (redirect) {

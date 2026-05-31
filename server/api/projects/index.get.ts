@@ -1,6 +1,6 @@
 // server/api/projects/index.get.ts
 import { db } from "~~/server/utils/db";
-import { eq, desc, sql, count } from "drizzle-orm";
+import { eq, desc, count, inArray } from "drizzle-orm";
 import { projects, conversations, runs } from "~~/server/database/schema";
 
 export default defineEventHandler(async (event) => {
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
         })
         .from(conversations)
         // Check if projectId is in our array
-        .where(sql`${conversations.projectId} IN ${projectIds}`)
+        .where(inArray(conversations.projectId, projectIds))
         .groupBy(conversations.projectId);
 
     // 3. Get run counts grouped by project
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
             total: count(),
         })
         .from(runs)
-        .where(sql`${runs.projectId} IN ${projectIds}`)
+        .where(inArray(runs.projectId, projectIds))
         .groupBy(runs.projectId);
 
     // 4. Merge the counts back into the projects array

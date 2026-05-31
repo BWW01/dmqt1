@@ -2,8 +2,7 @@
 export default defineNuxtRouteMiddleware(async () => {
     const { isLoggedIn, isInitialized, fetchMe, token } = useAuth();
 
-    // Várjuk meg az inicializálást, ha még nem történt meg
-    if (!isInitialized.value && token.value) {
+    if (!isInitialized.value) {
         await fetchMe();
     }
 

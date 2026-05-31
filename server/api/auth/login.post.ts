@@ -5,7 +5,6 @@ import { eq } from "drizzle-orm";
 import { users } from "~~/server/database/schema";
 
 import { verifyPassword, signToken } from "~~/server/utils/auth";
-import { chatCompletion, listModels } from "~~/server/utils/deepinfra";
 
 export default defineEventHandler(async (event) => {
     const body = await readBody(event);

@@ -5,7 +5,6 @@ import { users } from "~~/server/database/schema"; // Ensure this path matches y
 
 // Added hashPassword to the import list since it's used below
 import { hashPassword, signToken } from "~~/server/utils/auth";
-import { chatCompletion, listModels } from "~~/server/utils/deepinfra";
 
 export default defineEventHandler(async (event) => {
     const body = await readBody(event);
