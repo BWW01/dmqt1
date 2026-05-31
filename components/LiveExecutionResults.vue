@@ -111,7 +111,7 @@ function statusDot(status: string) {
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto custom-scrollbar p-4" style="max-height: 420px;">
+        <div class="flex-1 overflow-y-auto overflow-x-auto custom-scrollbar p-4" style="max-height: 420px;">
           <div v-for="out in rm.outputs" :key="out.id" class="text-sm text-zinc-100 leading-relaxed font-sans">
             <MarkdownContent :content="out.outputText || ''" />
             <span v-if="rm.status === 'running'" class="inline-block w-2 h-4 bg-orange-500 animate-pulse ml-1 align-middle opacity-70"></span>
@@ -152,7 +152,7 @@ function statusDot(status: string) {
           </button>
         </div>
 
-        <div class="overflow-y-auto custom-scrollbar p-6" style="max-height: 600px;">
+        <div class="overflow-y-auto overflow-x-auto custom-scrollbar p-6" style="max-height: 600px;">
           <div v-for="out in activeModel.outputs" :key="out.id" class="text-sm text-zinc-100 leading-relaxed font-sans">
             <MarkdownContent :content="out.outputText || ''" />
             <span v-if="activeModel.status === 'running'" class="inline-block w-2 h-4 bg-orange-500 animate-pulse ml-1 align-middle opacity-70"></span>

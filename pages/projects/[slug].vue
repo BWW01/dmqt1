@@ -140,11 +140,11 @@ const handleConversationSelect = (id: number) => {
           </div>
         </div>
 
-        <div class="flex-1 flex flex-col h-full min-h-0 gap-4">
+        <div class="flex-1 min-w-0 flex flex-col h-full min-h-0 gap-4">
 
           <div
               ref="chatContainerRef"
-              class="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6"
+              class="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar pr-2 space-y-6"
           >
             <SessionHistory
                 v-if="selectedConversationId && messages.length > 0"

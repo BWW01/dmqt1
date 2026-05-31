@@ -64,7 +64,7 @@ const parsed = computed(() => {
     </div>
 
     <div
-        class="prose prose-invert max-w-none
+        class="prose prose-invert max-w-none overflow-x-auto
                prose-headings:uppercase prose-headings:tracking-widest prose-headings:text-zinc-100
                prose-a:text-orange-400 prose-a:no-underline hover:prose-a:underline
                prose-strong:text-orange-400
