@@ -28,5 +28,9 @@ const { logout, user } = useAuth();
     <main class="flex-1 min-h-0 flex flex-col">
       <slot />
     </main>
+
+    <div class="fixed bottom-4 right-4 z-50 opacity-70 hover:opacity-100 transition-opacity">
+      <PixelCactus />
+    </div>
   </div>
 </template>

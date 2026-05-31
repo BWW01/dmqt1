@@ -80,15 +80,12 @@ onMounted(async () => {
     </div>
 
     <!-- Empty state with cactus -->
-    <div v-if="!projects || projects.length === 0" class="flex flex-col items-center justify-center py-20 border-2 border-dashed border-zinc-800 gap-8">
-      <PixelCactus />
-      <div class="text-center space-y-2">
-        <div class="text-zinc-600 uppercase font-black tracking-widest text-sm">
-          [ NO_ACTIVE_WORKSPACES_FOUND ]
-        </div>
-        <div class="text-zinc-700 text-[10px] uppercase tracking-widest">
-          Create a workspace above to begin
-        </div>
+    <div v-if="!projects || projects.length === 0" class="flex flex-col items-center justify-center py-20 border-2 border-dashed border-zinc-800 gap-4">
+      <div class="text-zinc-600 uppercase font-black tracking-widest text-sm">
+        [ NO_ACTIVE_WORKSPACES_FOUND ]
+      </div>
+      <div class="text-zinc-700 text-[10px] uppercase tracking-widest">
+        Create a workspace above to begin
       </div>
     </div>
 
