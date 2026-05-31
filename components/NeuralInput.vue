@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import type { Attachment } from '~/types/models';
+
 defineProps<{
   uploadLoading: boolean;
   polling: boolean;
-  uploadedImages: string[];
+  uploadedImages: Attachment[];
 }>();
 
 const emit = defineEmits<{
@@ -12,6 +14,10 @@ const emit = defineEmits<{
 }>();
 
 const mqInput = defineModel<string>("mqInput", { required: true });
+
+function isImage(att: Attachment) {
+  return att.mimeType.startsWith('image/');
+}
 </script>
 
 <template>
@@ -26,17 +32,28 @@ const mqInput = defineModel<string>("mqInput", { required: true });
     ></textarea>
 
     <div v-if="uploadedImages.length > 0" class="flex flex-wrap gap-3 p-3 bg-stone-50 border-x border-stone-300">
-      <div v-for="(url, index) in uploadedImages" :key="index" class="relative group w-24 h-24 border border-stone-300 hover:border-green-600 transition-colors">
-        <img :src="url" class="w-full h-full object-cover" alt="Uploaded attachment" />
-        <button @click="emit('removeImage', index)" class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center hover:bg-red-600 font-black shadow-lg">X</button>
+      <div v-for="(att, index) in uploadedImages" :key="index" class="relative group">
+        <!-- Image preview -->
+        <div v-if="isImage(att)" class="w-24 h-24 border border-stone-300 hover:border-green-600 transition-colors">
+          <img :src="att.url" class="w-full h-full object-cover" :alt="att.filename" />
+        </div>
+        <!-- Non-image file badge -->
+        <div v-else class="flex items-center gap-1 px-3 py-2 border border-stone-300 hover:border-green-600 bg-white transition-colors max-w-[160px]">
+          <span class="text-[9px] font-black text-green-700 uppercase">FILE</span>
+          <span class="text-[10px] text-stone-600 truncate">{{ att.filename }}</span>
+        </div>
+        <button
+            @click="emit('removeImage', index)"
+            class="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] w-5 h-5 flex items-center justify-center hover:bg-red-600 font-black shadow-lg"
+        >X</button>
       </div>
     </div>
 
     <div class="flex justify-between items-center mt-0 bg-stone-50 p-2 border border-stone-300">
       <label class="btn-industrial px-10 py-2 text-sm font-black disabled:opacity-30 flex items-center gap-2">
         <span v-if="uploadLoading" class="w-2 h-2 bg-green-300 animate-pulse rounded-full"></span>
-        {{ uploadLoading ? "UPLOADING_IMG..." : "[ ATTACH_IMAGE ]" }}
-        <input type="file" class="hidden" accept="image/*" @change="(e) => emit('upload', e)" :disabled="uploadLoading" />
+        {{ uploadLoading ? "UPLOADING..." : "[ ATTACH_FILE ]" }}
+        <input type="file" class="hidden" multiple @change="(e) => emit('upload', e)" :disabled="uploadLoading" />
       </label>
       <button
           @click="emit('execute')"

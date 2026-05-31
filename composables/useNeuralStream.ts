@@ -1,12 +1,13 @@
 // composables/useNeuralStream.ts
 import { ref, type Ref } from 'vue';
+import type { Attachment } from '~/types/models';
 
 export function useNeuralStream(
     projectSlug: Ref<string>,
     selectedConversationId: Ref<number | null>,
     selectedModels: Ref<string[]>,
     messages: Ref<any[]>,
-    uploadedImages: Ref<string[]>,
+    uploadedImages: Ref<Attachment[]>,
     loadMessages: () => Promise<void>
 ) {
     const { $api } = useApi();
@@ -61,7 +62,7 @@ export function useNeuralStream(
         try {
             const bodyPayload = {
                 userInput: mqInput.value,
-                images: uploadedImages.value,
+                attachments: uploadedImages.value,
                 models: selectedModels.value,
                 projectSlug: projectSlug.value,
                 conversationId: selectedConversationId.value,

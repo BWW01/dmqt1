@@ -26,6 +26,44 @@ const tools = [
                 required: ["filePath"]
             }
         }
+    },
+    {
+        type: "function",
+        function: {
+            name: "list_directory",
+            description: "List the files and subdirectories inside a directory of the imported GitHub repository. Use this to explore the repo structure before reading files.",
+            parameters: {
+                type: "object",
+                properties: {
+                    dirPath: {
+                        type: "string",
+                        description: "Relative path to the directory (e.g. src/components). Omit or pass '' for the repo root."
+                    }
+                },
+                required: []
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "search_code",
+            description: "Search for a regex pattern across all source files in the repository. Returns matching lines with file paths and line numbers. Skips node_modules and binary files.",
+            parameters: {
+                type: "object",
+                properties: {
+                    pattern: {
+                        type: "string",
+                        description: "The regex pattern to search for (e.g. 'useState|useEffect' or 'class MyComponent')"
+                    },
+                    dirPath: {
+                        type: "string",
+                        description: "Relative path to limit the search to a subdirectory. Omit to search the whole repo."
+                    }
+                },
+                required: ["pattern"]
+            }
+        }
     }
 ];
 
@@ -44,7 +82,8 @@ export default defineEventHandler(async (event) => {
         projectSlug,
         conversationId,
         systemPrompt,
-        includeLocation
+        includeLocation,
+        attachments,
     } = body;
 
     if (!models?.length || !userInput || !projectSlug) {
@@ -225,8 +264,41 @@ export default defineEventHandler(async (event) => {
                     });
                 }
 
-                // 4. Append current input
-                aiMessages.push({ role: "user", content: processedInput });
+                // 4. Append current input (with attachments if any)
+                const attachmentList: any[] = attachments || [];
+                if (attachmentList.length > 0) {
+                    const contentParts: any[] = [{ type: "text", text: processedInput }];
+                    for (const att of attachmentList) {
+                        if (att.mimeType?.startsWith('image/')) {
+                            try {
+                                const filename = String(att.url).split('/').pop() || '';
+                                const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
+                                const imageData = await fs.readFile(filePath);
+                                const base64 = imageData.toString('base64');
+                                contentParts.push({
+                                    type: "image_url",
+                                    image_url: { url: `data:${att.mimeType};base64,${base64}` }
+                                });
+                            } catch {
+                                // fallback: send URL as-is
+                                contentParts.push({ type: "image_url", image_url: { url: att.url } });
+                            }
+                        } else {
+                            try {
+                                const filename = String(att.url).split('/').pop() || '';
+                                const filePath = path.join(process.cwd(), 'public', 'uploads', filename);
+                                const fileText = await fs.readFile(filePath, 'utf-8');
+                                contentParts.push({
+                                    type: "text",
+                                    text: `\n\n--- ATTACHED_FILE: ${att.filename} ---\n${fileText}\n`
+                                });
+                            } catch { /* skip unreadable files */ }
+                        }
+                    }
+                    aiMessages.push({ role: "user", content: contentParts });
+                } else {
+                    aiMessages.push({ role: "user", content: processedInput });
+                }
 
                 async function executeAIStream(
                     messagesArray: any[],
@@ -350,6 +422,110 @@ export default defineEventHandler(async (event) => {
                                     tool_call_id: tc.id,
                                     name: tc.function.name,
                                     content: fileContent
+                                });
+
+                            } else if (tc.function.name === "list_directory") {
+                                let result = "";
+                                try {
+                                    const args = JSON.parse(tc.function.arguments);
+                                    const cleanPath = String(args.dirPath || '').replace(/^\/+/, '');
+                                    const resolvedPath = cleanPath
+                                        ? path.resolve(projectDir, cleanPath)
+                                        : projectDir;
+
+                                    if (
+                                        !resolvedPath.startsWith(projectDir + path.sep) &&
+                                        resolvedPath !== projectDir
+                                    ) {
+                                        throw new Error("Path traversal detected");
+                                    }
+
+                                    const notice = `\n\n> 📂 *[${rm.modelName}] Listing: \`/${cleanPath}\`*\n\n`;
+                                    fullText += notice;
+                                    event.node.res.write(
+                                        `data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: notice })}\n\n`
+                                    );
+
+                                    const entries = await fs.readdir(resolvedPath, { withFileTypes: true });
+                                    const lines = entries.map(e =>
+                                        `${e.isDirectory() ? '[DIR] ' : '[FILE]'} ${e.name}`
+                                    );
+                                    result = `Contents of /${cleanPath}:\n${lines.join('\n')}`;
+                                } catch (err: any) {
+                                    result = `Error listing directory: ${err.message}`;
+                                }
+
+                                messagesArray.push({
+                                    role: "tool",
+                                    tool_call_id: tc.id,
+                                    name: tc.function.name,
+                                    content: result
+                                });
+
+                            } else if (tc.function.name === "search_code") {
+                                let result = "";
+                                try {
+                                    const args = JSON.parse(tc.function.arguments);
+                                    const pattern = String(args.pattern);
+                                    const cleanDir = String(args.dirPath || '').replace(/^\/+/, '');
+                                    const resolvedDir = cleanDir
+                                        ? path.resolve(projectDir, cleanDir)
+                                        : projectDir;
+
+                                    if (
+                                        !resolvedDir.startsWith(projectDir + path.sep) &&
+                                        resolvedDir !== projectDir
+                                    ) {
+                                        throw new Error("Path traversal detected");
+                                    }
+
+                                    const notice = `\n\n> 🔎 *[${rm.modelName}] Searching: \`${pattern}\`*\n\n`;
+                                    fullText += notice;
+                                    event.node.res.write(
+                                        `data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: notice })}\n\n`
+                                    );
+
+                                    const regex = new RegExp(pattern, 'i');
+                                    const matches: string[] = [];
+
+                                    async function searchFiles(dir: string): Promise<void> {
+                                        if (matches.length >= 50) return;
+                                        const entries = await fs.readdir(dir, { withFileTypes: true });
+                                        for (const entry of entries) {
+                                            if (matches.length >= 50) break;
+                                            const fullPath = path.join(dir, entry.name);
+                                            if (entry.isDirectory()) {
+                                                if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) {
+                                                    await searchFiles(fullPath);
+                                                }
+                                            } else {
+                                                try {
+                                                    const content = await fs.readFile(fullPath, 'utf-8');
+                                                    const lines = content.split('\n');
+                                                    for (let i = 0; i < lines.length && matches.length < 50; i++) {
+                                                        if (regex.test(lines[i])) {
+                                                            const relPath = path.relative(projectDir, fullPath);
+                                                            matches.push(`${relPath}:${i + 1}: ${lines[i].trim()}`);
+                                                        }
+                                                    }
+                                                } catch { /* skip unreadable/binary files */ }
+                                            }
+                                        }
+                                    }
+
+                                    await searchFiles(resolvedDir);
+                                    result = matches.length > 0
+                                        ? `Found ${matches.length} match${matches.length === 1 ? '' : 'es'} for "${pattern}":\n\n${matches.join('\n')}`
+                                        : `No matches found for "${pattern}"`;
+                                } catch (err: any) {
+                                    result = `Error searching: ${err.message}`;
+                                }
+
+                                messagesArray.push({
+                                    role: "tool",
+                                    tool_call_id: tc.id,
+                                    name: tc.function.name,
+                                    content: result
                                 });
                             }
                         }

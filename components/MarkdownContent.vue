@@ -5,12 +5,26 @@ const md = new MarkdownIt({ html: true, linkify: true });
 
 const props = defineProps<{ content: string }>();
 
+function wrapBareImages(content: string): string {
+  // Wrap bare image URLs on their own line so markdown-it renders them as <img>
+  content = content.replace(
+    /^(https?:\/\/\S+\.(?:png|jpe?g|gif|webp|svg|bmp))(\s*)$/gim,
+    '![]($1)$2'
+  );
+  // Wrap base64 image data on its own line
+  content = content.replace(
+    /^(data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/]+=*)(\s*)$/gim,
+    '![]($1)$2'
+  );
+  return content;
+}
+
 const parsed = computed(() => {
   const thinkMatch = props.content.match(/<think>([\s\S]*?)<\/think>/);
   const thought = thinkMatch ? thinkMatch[1].trim() : null;
-  const mainContent = props.content
-      .replace(/<think>[\s\S]*?<\/think>/, "")
-      .trim();
+  const mainContent = wrapBareImages(
+    props.content.replace(/<think>[\s\S]*?<\/think>/, "").trim()
+  );
 
   return {
     thought,
