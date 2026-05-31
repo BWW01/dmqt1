@@ -1,17 +1,31 @@
 <script setup lang="ts">
 import 'katex/dist/katex.min.css';
 import MarkdownIt from 'markdown-it';
-import tm from 'markdown-it-texmath';
 import katex from 'katex';
 
-const md = new MarkdownIt({ html: true, linkify: true })
-  .use(tm, {
-    engine: katex,
-    delimiters: 'dollars',
-    katexOptions: { throwOnError: false, output: 'html' },
-  });
+const md = new MarkdownIt({ html: true, linkify: true });
 
 const props = defineProps<{ content: string }>();
+
+function renderLatex(content: string): string {
+  // Block math $$...$$ — must be processed before inline
+  content = content.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+    try {
+      return katex.renderToString(math.trim(), { displayMode: true, throwOnError: false, output: 'html' });
+    } catch {
+      return `<pre>$$${math}$$</pre>`;
+    }
+  });
+  // Inline math $...$ — single line only, no empty matches
+  content = content.replace(/\$([^\n$]+?)\$/g, (_, math) => {
+    try {
+      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false, output: 'html' });
+    } catch {
+      return `$${math}$`;
+    }
+  });
+  return content;
+}
 
 function wrapBareImages(content: string): string {
   content = content.replace(
@@ -28,9 +42,8 @@ function wrapBareImages(content: string): string {
 const parsed = computed(() => {
   const thinkMatch = props.content.match(/<think>([\s\S]*?)<\/think>/);
   const thought = thinkMatch ? thinkMatch[1].trim() : null;
-  const mainContent = wrapBareImages(
-    props.content.replace(/<think>[\s\S]*?<\/think>/, '').trim()
-  );
+  const cleaned = props.content.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+  const mainContent = wrapBareImages(renderLatex(cleaned));
 
   return {
     thought,
