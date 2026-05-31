@@ -44,7 +44,7 @@ export default defineEventHandler(async (event): Promise<Model[]> => {
             id: m.id || m.model_name || '',
             model_name: m.name || m.model_name || m.id || '',
             capabilities: detectCapabilities(m.id || m.model_name || ''),
-            pricing: m.metadata?.pricing ? {
+            pricing: m.metadata?.pricing?.input_tokens != null ? {
                 inputTokens: m.metadata.pricing.input_tokens,
                 outputTokens: m.metadata.pricing.output_tokens,
                 cacheReadTokens: m.metadata.pricing.cache_read_tokens

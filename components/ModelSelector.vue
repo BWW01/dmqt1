@@ -139,8 +139,8 @@ const capabilityConfig = {
               </div>
 
               <!-- Pricing -->
-              <div v-if="m.pricing" class="text-[11px] text-stone-400 whitespace-nowrap pl-2 border-l border-stone-200">
-                {{ m.pricing.inputTokens.toFixed(5)  }} / 1M
+              <div v-if="m.pricing?.inputTokens != null" class="text-[11px] text-stone-400 whitespace-nowrap pl-2 border-l border-stone-200">
+                {{ m.pricing.inputTokens.toFixed(5) }} / 1M
               </div>
             </div>
           </label>
