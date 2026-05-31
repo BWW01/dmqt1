@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import 'katex/dist/katex.min.css';
 import MarkdownIt from 'markdown-it';
 import tm from 'markdown-it-texmath';
 import katex from 'katex';
