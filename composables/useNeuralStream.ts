@@ -142,7 +142,7 @@ export function useNeuralStream(
             // -----------------------------------------------------
 
             if (selectedConversationId.value) {
-                runResult.value = null;
+                runResult.value = streamingRun.value;
                 streamingRun.value = null;
                 await loadMessages();
             } else {

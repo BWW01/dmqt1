@@ -52,6 +52,13 @@
     }
 }
 
+/* KaTeX dark theme */
+.katex { color: inherit; }
+.katex-display {
+    @apply bg-zinc-900 border border-zinc-700 p-4 my-4 overflow-x-auto;
+}
+.katex-error { @apply text-red-400; }
+
 /* Message slide-in animation */
 .message-enter-active {
     animation: slideInUp 0.25s ease-out;

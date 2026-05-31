@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import MarkdownIt from 'markdown-it';
+import tm from 'markdown-it-texmath';
+import katex from 'katex';
 
-const md = new MarkdownIt({ html: true, linkify: true });
+const md = new MarkdownIt({ html: true, linkify: true })
+  .use(tm, {
+    engine: katex,
+    delimiters: 'dollars',
+    katexOptions: { throwOnError: false, output: 'html' },
+  });
 
 const props = defineProps<{ content: string }>();
 
@@ -21,7 +28,7 @@ const parsed = computed(() => {
   const thinkMatch = props.content.match(/<think>([\s\S]*?)<\/think>/);
   const thought = thinkMatch ? thinkMatch[1].trim() : null;
   const mainContent = wrapBareImages(
-    props.content.replace(/<think>[\s\S]*?<\/think>/, "").trim()
+    props.content.replace(/<think>[\s\S]*?<\/think>/, '').trim()
   );
 
   return {
