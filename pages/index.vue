@@ -79,13 +79,20 @@ onMounted(async () => {
       </button>
     </div>
 
-    <div
-        v-if="!projects || projects.length === 0"
-        class="text-zinc-600 text-center py-20 uppercase font-black tracking-widest border-2 border-dashed border-zinc-800"
-    >
-      [ NO_ACTIVE_WORKSPACES_FOUND ]
+    <!-- Empty state with cactus -->
+    <div v-if="!projects || projects.length === 0" class="flex flex-col items-center justify-center py-20 border-2 border-dashed border-zinc-800 gap-8">
+      <PixelCactus />
+      <div class="text-center space-y-2">
+        <div class="text-zinc-600 uppercase font-black tracking-widest text-sm">
+          [ NO_ACTIVE_WORKSPACES_FOUND ]
+        </div>
+        <div class="text-zinc-700 text-[10px] uppercase tracking-widest">
+          Create a workspace above to begin
+        </div>
+      </div>
     </div>
 
+    <!-- Project cards -->
     <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
       <NuxtLink
           v-for="p in projects"
