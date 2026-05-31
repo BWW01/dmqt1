@@ -1,8 +1,10 @@
 // server/api/conversations/[id]/messages/index.post.ts
 import { db } from "~~/server/utils/db";
-import { eq, asc } from "drizzle-orm";
-import { messages, users } from "~~/server/database/schema";
-import { chatCompletion } from "~~/server/utils/deepinfra";
+import { eq, asc, and, sql } from "drizzle-orm";
+import { messages, users, conversations } from "~~/server/database/schema";
+import { chatCompletionStream } from "~~/server/utils/deepinfra";
+
+const COST_FALLBACK_PER_TOKEN = 0.000001;
 
 export default defineEventHandler(async (event) => {
     const userId = event.context.user?.id;
@@ -18,30 +20,26 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 400, message: "Content is required" });
     }
 
-    // --- 1. KREDIT SZIGORÚ ELLENŐRZÉSE ---
     const [user] = await db
         .select({ credits: users.credits })
         .from(users)
         .where(eq(users.id, userId));
 
-    // Biztosítjuk, hogy valódi lebegőpontos számként kezeljük
     const currentCredits = Number(user?.credits || 0);
-
     if (!user || currentCredits <= 0) {
         throw createError({
             statusCode: 402,
             message: `ACCESS_DENIED: Insufficient tokens. Current balance: ${currentCredits}`
         });
     }
-    // -------------------------------------
 
-    // 2. Mentsük el a User üzenetét
-    await db.insert(messages).values({
-        conversationId,
-        sender: "user",
-        content: content
-    });
+    // Save user message and bump conversation timestamp
+    await db.insert(messages).values({ conversationId, sender: "user", content });
+    await db.update(conversations)
+        .set({ updatedAt: new Date() })
+        .where(eq(conversations.id, conversationId));
 
+    // Load full history including the message just saved
     const history = await db
         .select()
         .from(messages)
@@ -55,53 +53,85 @@ export default defineEventHandler(async (event) => {
 
     const activeModel = model || "meta-llama/Llama-3-70b-chat";
 
+    setHeader(event, 'Content-Type', 'text/event-stream');
+    setHeader(event, 'Cache-Control', 'no-cache');
+    setHeader(event, 'Connection', 'keep-alive');
+
+    let fullText = "";
+    let usageData: any = null;
+
     try {
-        const aiResponse = await chatCompletion(activeModel, aiMessages);
-        const aiResponseText = aiResponse.choices[0].message.content;
+        const stream = await chatCompletionStream(activeModel, aiMessages);
+        if (!stream) throw new Error("No stream returned");
 
-        // --- 3. KÖLTSÉG BIZTOS KISZÁMÍTÁSA ÉS LEVONÁSA ---
-        const usage = aiResponse.usage || {};
+        const reader = stream.getReader();
+        const decoder = new TextDecoder("utf-8");
 
-        // Ha van becsült ár a DeepInfrától, azt használjuk
-        let cost = usage.estimated_cost;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-        // Ha nincs becsült ár (undefined), számolunk egyet a felhasznált tokenek alapján
-        if (cost === undefined || cost === null) {
-            const totalTokens = usage.total_tokens || 10;
-            cost = totalTokens * 0.000001; // Egy átlagos, nagyon pici szorzó
+            const chunkText = decoder.decode(value, { stream: true });
+            for (const line of chunkText.split("\n").filter(l => l.trim())) {
+                if (line.startsWith("data: ") && line !== "data: [DONE]") {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.usage) usageData = data.usage;
+                        const delta = data.choices?.[0]?.delta;
+                        if (delta?.content) {
+                            fullText += delta.content;
+                            event.node.res.write(
+                                `data: ${JSON.stringify({ type: "chunk", text: delta.content })}\n\n`
+                            );
+                        }
+                    } catch { /* skip malformed lines */ }
+                }
+            }
         }
+
+        // Atomic credit deduction
+        const cost = typeof usageData?.estimated_cost === "number" && usageData.estimated_cost > 0
+            ? usageData.estimated_cost
+            : (usageData?.total_tokens || 10) * COST_FALLBACK_PER_TOKEN;
 
         if (cost > 0) {
-            const newBalance = currentCredits - cost;
             await db.update(users)
-                .set({ credits: newBalance })
-                .where(eq(users.id, userId));
+                .set({ credits: sql`${users.credits} - ${cost}` })
+                .where(and(eq(users.id, userId), sql`${users.credits} >= ${cost}`));
         }
-        // ------------------------------------------------
 
-        // 4. Mentsük el a System válaszát
         const [assistantMessage] = await db
             .insert(messages)
             .values({
                 conversationId,
                 sender: "assistant",
-                content: aiResponseText
+                content: fullText,
+                metaJson: { model: activeModel, usage: usageData, timestamp: new Date().toISOString() }
             })
             .returning();
 
-        return assistantMessage;
+        await db.update(conversations)
+            .set({ updatedAt: new Date() })
+            .where(eq(conversations.id, conversationId));
+
+        event.node.res.write(
+            `data: ${JSON.stringify({ type: "done", messageId: assistantMessage.id })}\n\n`
+        );
 
     } catch (error: any) {
-        console.error("AI Communication Error:", error);
         const [errorMessage] = await db
             .insert(messages)
             .values({
                 conversationId,
                 sender: "assistant",
-                content: `**[SYSTEM_ERROR]:** Connection to neural net failed. \n\n\`${error.message}\``
+                content: `**[SYSTEM_ERROR]:** ${error.message}`
             })
             .returning();
 
-        return errorMessage;
+        event.node.res.write(
+            `data: ${JSON.stringify({ type: "error", error: error.message, messageId: errorMessage.id })}\n\n`
+        );
     }
+
+    event.node.res.end();
 });

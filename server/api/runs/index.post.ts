@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { db } from "~~/server/utils/db";
 import { eq, and, asc, sql } from "drizzle-orm";
-import { runs, runModels, runOutputs, projects, messages, users } from "~~/server/database/schema";
+import { runs, runModels, runOutputs, projects, messages, users, conversations } from "~~/server/database/schema";
 import { chatCompletionStream } from "~~/server/utils/deepinfra";
 
 const MAX_TOOL_DEPTH = 5;
@@ -41,6 +41,27 @@ const tools = [
                     }
                 },
                 required: []
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "write_file",
+            description: "Write content to a file in the imported GitHub repository. Creates the file (and any missing parent directories) if it doesn't exist, or overwrites it if it does.",
+            parameters: {
+                type: "object",
+                properties: {
+                    filePath: {
+                        type: "string",
+                        description: "The relative path to write to (e.g. src/utils/helper.ts)"
+                    },
+                    content: {
+                        type: "string",
+                        description: "The full content to write to the file"
+                    }
+                },
+                required: ["filePath", "content"]
             }
         }
     },
@@ -221,6 +242,9 @@ export default defineEventHandler(async (event) => {
             content: userInput,
             metaJson
         });
+        await db.update(conversations)
+            .set({ updatedAt: new Date() })
+            .where(eq(conversations.id, conversationId));
     }
 
     // --- SSE HEADERS ---
@@ -527,6 +551,41 @@ export default defineEventHandler(async (event) => {
                                     name: tc.function.name,
                                     content: result
                                 });
+
+                            } else if (tc.function.name === "write_file") {
+                                let result = "";
+                                try {
+                                    const args = JSON.parse(tc.function.arguments);
+                                    const cleanPath = String(args.filePath).replace(/^\/+/, '');
+                                    const resolvedPath = path.resolve(projectDir, cleanPath);
+
+                                    if (
+                                        !resolvedPath.startsWith(projectDir + path.sep) &&
+                                        resolvedPath !== projectDir
+                                    ) {
+                                        throw new Error("Path traversal detected");
+                                    }
+
+                                    await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+                                    await fs.writeFile(resolvedPath, String(args.content), 'utf-8');
+
+                                    const notice = `\n\n> ✏️ *[${rm.modelName}] Writing file: \`${args.filePath}\`*\n\n`;
+                                    fullText += notice;
+                                    event.node.res.write(
+                                        `data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: notice })}\n\n`
+                                    );
+
+                                    result = `Successfully wrote ${String(args.content).length} characters to ${args.filePath}`;
+                                } catch (err: any) {
+                                    result = `Error writing file: ${err.message}`;
+                                }
+
+                                messagesArray.push({
+                                    role: "tool",
+                                    tool_call_id: tc.id,
+                                    name: tc.function.name,
+                                    content: result
+                                });
                             }
                         }
 
@@ -588,6 +647,9 @@ export default defineEventHandler(async (event) => {
                             usage: usageData
                         }
                     });
+                    await db.update(conversations)
+                        .set({ updatedAt: new Date() })
+                        .where(eq(conversations.id, conversationId));
                 }
 
                 event.node.res.write(

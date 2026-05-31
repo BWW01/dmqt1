@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
         });
     }
 
-    const { hash, salt } = hashPassword(password);
+    const { hash, salt } = await hashPassword(password);
 
     // --- Drizzle: Insert new user ---
     // The .returning() clause is required to get the newly created user data back,

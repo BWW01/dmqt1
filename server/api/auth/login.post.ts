@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
 
     if (
         !user ||
-        !verifyPassword(password, user.passwordHash, user.passwordSalt)
+        !await verifyPassword(password, user.passwordHash, user.passwordSalt)
     ) {
         throw createError({
             statusCode: 401,

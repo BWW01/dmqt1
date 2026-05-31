@@ -13,7 +13,7 @@ const { isLoggedIn } = useAuth();
 watchEffect(() => { if (!isLoggedIn.value) navigateTo("/login"); });
 
 const { $api } = useApi(); // We need $api for the import fetch
-const { project, conversations, selectedConversationId, messages, newConvTitle, loadProject, loadMessages, createConversation } = useWorkspace(projectSlug);
+const { project, conversations, selectedConversationId, messages, newConvTitle, convStreamText, isConvStreaming, loadProject, loadMessages, createConversation, sendMessage } = useWorkspace(projectSlug);
 const { models, selectedModels, loadModels } = useAIModels();
 const { uploadedImages, uploadLoading, handleFileUpload } = useAttachments();
 const { mqInput, systemPrompt, temperature, topP, maxTokens, includeLocation, polling, runResult, streamingRun, startRun } = useNeuralStream(projectSlug, selectedConversationId, selectedModels, messages, uploadedImages, loadMessages);
@@ -150,6 +150,19 @@ const handleConversationSelect = (id: number) => {
                 v-if="selectedConversationId && messages.length > 0"
                 :messages="messages"
             />
+
+            <!-- Streaming assistant reply from direct conversation endpoint -->
+            <div v-if="convStreamText || isConvStreaming" class="p-4 border bg-green-50 border-green-200 mr-8">
+              <div class="text-[9px] font-black text-green-700 mb-2 pb-2 border-b border-green-200">
+                &gt; NEURAL_OUTPUT
+                <span v-if="isConvStreaming" class="ml-2 text-stone-400 font-normal normal-case tracking-normal">(streaming...)</span>
+              </div>
+              <div class="text-sm font-sans text-stone-800">
+                <MarkdownContent :content="convStreamText" />
+                <span v-if="isConvStreaming" class="inline-block w-2 h-4 bg-green-500 animate-pulse ml-1 align-middle opacity-70"></span>
+              </div>
+            </div>
+
             <LiveExecutionResults
                 v-if="streamingRun || runResult"
                 :runData="streamingRun || runResult"
