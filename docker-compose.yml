@@ -11,5 +11,21 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  kroki:
+    image: yuzutech/kroki
+    container_name: dmqt_kroki
+    environment:
+      - KROKI_MERMAID_HOST=kroki-mermaid
+    ports:
+      - "8000:8000"
+    depends_on:
+      - kroki-mermaid
+
+  kroki-mermaid:
+    image: yuzutech/kroki-mermaid
+    container_name: dmqt_kroki_mermaid
+    expose:
+      - "8002"
+
 volumes:
   pgdata:

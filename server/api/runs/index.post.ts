@@ -69,6 +69,28 @@ const tools = [
     {
         type: "function",
         function: {
+            name: "render_diagram",
+            description: "Render a diagram from source code and return an inline image. Supported formats: plantuml, mermaid, graphviz, d2, ditaa, erd, nomnoml, svgbob, tikz, vega, vegalite, wavedrom. The returned image will be displayed directly in the response — place the result on its own line.",
+            parameters: {
+                type: "object",
+                properties: {
+                    format: {
+                        type: "string",
+                        enum: ["plantuml", "mermaid", "graphviz", "d2", "ditaa", "erd", "nomnoml", "svgbob", "tikz", "vega", "vegalite", "wavedrom"],
+                        description: "The diagram language/format"
+                    },
+                    code: {
+                        type: "string",
+                        description: "The diagram source code"
+                    }
+                },
+                required: ["format", "code"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
             name: "search_code",
             description: "Search for a regex pattern across all source files in the repository. Returns matching lines with file paths and line numbers. Skips node_modules and binary files.",
             parameters: {
@@ -579,6 +601,42 @@ export default defineEventHandler(async (event) => {
                                     result = `Successfully wrote ${String(args.content).length} characters to ${args.filePath}`;
                                 } catch (err: any) {
                                     result = `Error writing file: ${err.message}`;
+                                }
+
+                                messagesArray.push({
+                                    role: "tool",
+                                    tool_call_id: tc.id,
+                                    name: tc.function.name,
+                                    content: result
+                                });
+
+                            } else if (tc.function.name === "render_diagram") {
+                                let result = "";
+                                try {
+                                    const args = JSON.parse(tc.function.arguments);
+                                    const format = String(args.format);
+                                    const code = String(args.code);
+                                    const allowed = ["plantuml","mermaid","graphviz","d2","ditaa","erd","nomnoml","svgbob","tikz","vega","vegalite","wavedrom"];
+                                    if (!allowed.includes(format)) throw new Error(`Unsupported format: ${format}`);
+
+                                    const notice = `\n\n> 📐 *[${rm.modelName}] Rendering ${format} diagram...*\n\n`;
+                                    fullText += notice;
+                                    event.node.res.write(
+                                        `data: ${JSON.stringify({ type: "chunk", modelId: rm.id, text: notice })}\n\n`
+                                    );
+
+                                    const krokiUrl = process.env.KROKI_URL ?? "http://localhost:8000";
+                                    const res = await fetch(`${krokiUrl}/${format}/svg`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "text/plain" },
+                                        body: code
+                                    });
+                                    if (!res.ok) throw new Error(`Kroki returned HTTP ${res.status}`);
+                                    const svg = await res.text();
+                                    const b64 = Buffer.from(svg).toString("base64");
+                                    result = `data:image/svg+xml;base64,${b64}`;
+                                } catch (err: any) {
+                                    result = `Error rendering diagram: ${err.message}`;
                                 }
 
                                 messagesArray.push({
