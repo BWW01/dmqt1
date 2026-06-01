@@ -12,7 +12,9 @@ export default defineEventHandler(async (event) => {
     // 1. Útvonalak meghatározása
     const ext = path.extname(file.filename);
     const newFilename = `${randomUUID()}${ext}`;
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    const uploadDir = process.env.NODE_ENV === 'production'
+        ? path.join(process.cwd(), '.output', 'public', 'uploads')
+        : path.join(process.cwd(), 'public', 'uploads');
     const uploadPath = path.join(uploadDir, newFilename);
 
     try {
