@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
         await fs.writeFile(uploadPath, file.data);
 
         return {
-            url: `/uploads/${newFilename}`,
+            url: `/api/uploads/${newFilename}`,
             filename: file.filename
         };
     } catch (err: any) {

@@ -8,6 +8,7 @@ export default defineEventHandler((event) => {
     if (
         path === "/api/auth/login" ||
         path === "/api/auth/register" ||
+        path.startsWith("/api/uploads/") ||
         !path.startsWith("/api/")
     ) {
         return;

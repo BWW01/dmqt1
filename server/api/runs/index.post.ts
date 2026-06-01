@@ -638,7 +638,7 @@ export default defineEventHandler(async (event) => {
                                     const uploadDir = path.join(process.cwd(), '.storage', 'uploads');
                                     await fs.mkdir(uploadDir, { recursive: true });
                                     await fs.writeFile(path.join(uploadDir, filename), svg, 'utf-8');
-                                    result = `/uploads/${filename}`;
+                                    result = `/api/uploads/${filename}`;
                                 } catch (err: any) {
                                     result = `Error rendering diagram: ${err.message}`;
                                 }

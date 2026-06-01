@@ -29,7 +29,7 @@ function renderLatex(content: string): string {
 
 function wrapBareImages(content: string): string {
   content = content.replace(
-    /^((?:https?:\/\/\S+|\/uploads\/\S+)\.(?:png|jpe?g|gif|webp|svg|bmp))(\s*)$/gim,
+    /^((?:https?:\/\/\S+|\/api\/uploads\/\S+)\.(?:png|jpe?g|gif|webp|svg|bmp))(\s*)$/gim,
     '![]($1)$2'
   );
   content = content.replace(
