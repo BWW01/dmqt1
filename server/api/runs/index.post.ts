@@ -635,9 +635,7 @@ export default defineEventHandler(async (event) => {
                                     const svg = await res.text();
                                     const { randomUUID } = await import('node:crypto');
                                     const filename = `diagram-${randomUUID()}.svg`;
-                                    const uploadDir = process.env.NODE_ENV === 'production'
-                                        ? path.join(process.cwd(), '.output', 'public', 'uploads')
-                                        : path.join(process.cwd(), 'public', 'uploads');
+                                    const uploadDir = path.join(process.cwd(), '.storage', 'uploads');
                                     await fs.mkdir(uploadDir, { recursive: true });
                                     await fs.writeFile(path.join(uploadDir, filename), svg, 'utf-8');
                                     result = `/uploads/${filename}`;
