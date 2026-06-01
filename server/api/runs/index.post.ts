@@ -633,8 +633,12 @@ export default defineEventHandler(async (event) => {
                                     });
                                     if (!res.ok) throw new Error(`Kroki returned HTTP ${res.status}`);
                                     const svg = await res.text();
-                                    const b64 = Buffer.from(svg).toString("base64");
-                                    result = `data:image/svg+xml;base64,${b64}`;
+                                    const { randomUUID } = await import('node:crypto');
+                                    const filename = `diagram-${randomUUID()}.svg`;
+                                    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+                                    await fs.mkdir(uploadDir, { recursive: true });
+                                    await fs.writeFile(path.join(uploadDir, filename), svg, 'utf-8');
+                                    result = `/uploads/${filename}`;
                                 } catch (err: any) {
                                     result = `Error rendering diagram: ${err.message}`;
                                 }
